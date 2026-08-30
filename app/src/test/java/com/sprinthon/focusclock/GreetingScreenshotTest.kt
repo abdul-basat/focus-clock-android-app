@@ -32,10 +32,10 @@ class GreetingScreenshotTest {
           configuredDurationMinutes = 25,
           configuredTimerMode = TimerDisplayMode.COUNTDOWN,
           allProfiles = FocusProfile.DEFAULT_PROFILES,
-          historyRecords = emptyList(),
           onStartFocus = {},
           onOpenStartConfig = {},
-          onOpenClockStyleSelector = {},
+          onOpenClockCanvas = {},
+          onOpenAudio = {},
           onOpenProfileSelector = {},
           onOpenSettings = {}
         )
