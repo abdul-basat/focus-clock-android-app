@@ -16,3 +16,6 @@
 local.properties
 .env
 debug.keystore
+
+# Test screenshots (regenerate these locally rather than committing)
+app/src/test/screenshots/*.png
