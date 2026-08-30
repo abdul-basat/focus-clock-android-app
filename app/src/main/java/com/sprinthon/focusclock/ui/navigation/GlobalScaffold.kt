@@ -101,7 +101,7 @@ fun GlobalScaffold(
                         val isSelected = when (item) {
                             GlobalNavigationItem.Home -> currentRoute == Screen.Home.route
                             GlobalNavigationItem.StartFocus -> currentRoute == Screen.StartFocus.route
-                            GlobalNavigationItem.Ambient -> currentRoute == Screen.AudioSettings.route
+                            GlobalNavigationItem.Ambient -> currentRoute == Screen.Soundscape.route
                             GlobalNavigationItem.Settings -> currentRoute?.startsWith("settings") == true
                         }
                         NavigationBarItem(

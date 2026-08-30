@@ -16,13 +16,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sprinthon.focusclock.domain.model.SessionState
-import com.sprinthon.focusclock.ui.clock.ClockFontBottomSheet
-import com.sprinthon.focusclock.ui.clock.ClockStyleBottomSheet
 import com.sprinthon.focusclock.ui.clock.rememberCurrentTimeData
 import com.sprinthon.focusclock.ui.components.CustomDurationDialog
 import com.sprinthon.focusclock.ui.components.ProfileSelectorBottomSheet
 import com.sprinthon.focusclock.ui.screens.ActiveFocusScreen
-import com.sprinthon.focusclock.ui.screens.BackgroundSettingsScreen
+import com.sprinthon.focusclock.ui.screens.ClockCanvasSettingsScreen
+import com.sprinthon.focusclock.ui.screens.CustomizerTab
 import com.sprinthon.focusclock.ui.screens.HomeScreen
 import com.sprinthon.focusclock.ui.screens.OnboardingScreen
 import com.sprinthon.focusclock.ui.screens.StartFocusScreen
@@ -32,12 +31,11 @@ sealed class Screen(val route: String) {
     object Onboarding : Screen("onboarding")
     object Home : Screen("home")
     object StartFocus : Screen("start_focus")
-    object BackgroundSettings : Screen("background_settings")
+    object ClockCanvas : Screen("clock_canvas")
+    object Soundscape : Screen("soundscape")
     object ActiveFocus : Screen("active_focus")
     object SettingsHub : Screen("settings_hub")
     object FocusSettings : Screen("settings_focus")
-    object ClockSettings : Screen("settings_clock")
-    object AudioSettings : Screen("settings_audio")
     object GeneralSettings : Screen("settings_general")
     object About : Screen("settings_about")
 }
@@ -61,7 +59,7 @@ fun AppNavigation(
         }
     }
 
-    // Stop music when navigating away from ActiveFocus or AudioSettings (preview)
+    // Stop music when navigating away from ActiveFocus or Soundscape (preview)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     LaunchedEffect(currentRoute) {
@@ -72,9 +70,9 @@ fun AppNavigation(
                 viewModel.stopPlayer()
             }
         }
-        // If user navigated away from Ambient settings, stop any preview playback
+        // If user navigated away from Soundscape settings, stop any preview playback
         // (unless a focus session is actively running)
-        if (currentRoute != null && currentRoute != Screen.AudioSettings.route) {
+        if (currentRoute != null && currentRoute != Screen.Soundscape.route) {
             val sessionIsActive = uiState.session.state == SessionState.RUNNING || uiState.session.state == SessionState.PAUSED
             if (!sessionIsActive && viewModel.playerManager.playerUiState.value.isPlaying) {
                 viewModel.stopPlayer()
@@ -99,451 +97,373 @@ fun AppNavigation(
         ) {
             composable(
                 route = Screen.Onboarding.route,
-            enterTransition = { fadeIn(animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) }
-        ) {
-            OnboardingScreen(
-                onFinishOnboardingStartFocus = { profile ->
-                    viewModel.completeOnboarding(profile, customizeFirst = false)
-                    viewModel.startFocusSession()
-                    navController.navigate(Screen.ActiveFocus.route) {
-                        popUpTo(Screen.Onboarding.route) { inclusive = true }
-                        launchSingleTop = true
+                enterTransition = { fadeIn(animationSpec = tween(300)) },
+                exitTransition = { fadeOut(animationSpec = tween(300)) }
+            ) {
+                OnboardingScreen(
+                    onFinishOnboardingStartFocus = { profile ->
+                        viewModel.completeOnboarding(profile, customizeFirst = false)
+                        viewModel.startFocusSession()
+                        navController.navigate(Screen.ActiveFocus.route) {
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onFinishOnboardingCustomize = {
+                        viewModel.completeOnboarding(null, customizeFirst = true)
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        }
                     }
+                )
+            }
+
+            composable(
+                route = Screen.Home.route,
+                enterTransition = { fadeIn(animationSpec = tween(300)) },
+                exitTransition = { fadeOut(animationSpec = tween(300)) }
+            ) {
+                HomeScreen(
+                    preferences = uiState.preferences,
+                    configuredDurationMinutes = uiState.configuredDurationMinutes,
+                    configuredTimerMode = uiState.configuredTimerMode,
+                    allProfiles = uiState.allProfiles,
+                    onStartFocus = {
+                        viewModel.startFocusSession()
+                        navController.navigate(Screen.ActiveFocus.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenStartConfig = {
+                        navController.navigate(Screen.StartFocus.route)
+                    },
+                    onOpenClockCanvas = {
+                        navController.navigate(Screen.ClockCanvas.route)
+                    },
+                    onOpenAudio = {
+                        navController.navigate(Screen.Soundscape.route)
+                    },
+                    onOpenProfileSelector = {
+                        viewModel.setShowProfileSelectorSheet(true)
+                    },
+                    onOpenSettings = {
+                        navController.navigate(Screen.SettingsHub.route)
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.StartFocus.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Up,
+                        animationSpec = tween(300)
+                    )
                 },
-                onFinishOnboardingCustomize = {
-                    viewModel.completeOnboarding(null, customizeFirst = true)
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Onboarding.route) { inclusive = true }
-                    }
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Down,
+                        animationSpec = tween(300)
+                    )
                 }
-            )
-        }
-
-        composable(
-            route = Screen.Home.route,
-            enterTransition = { fadeIn(animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) }
-        ) {
-            HomeScreen(
-                preferences = uiState.preferences,
-                configuredDurationMinutes = uiState.configuredDurationMinutes,
-                configuredTimerMode = uiState.configuredTimerMode,
-                allProfiles = uiState.allProfiles,
-                onStartFocus = {
-                    viewModel.startFocusSession()
-                    navController.navigate(Screen.ActiveFocus.route) {
-                        launchSingleTop = true
+            ) {
+                StartFocusScreen(
+                    preferences = uiState.preferences,
+                    configuredDurationMinutes = uiState.configuredDurationMinutes,
+                    isCustomDuration = uiState.isCustomDuration,
+                    configuredTimerMode = uiState.configuredTimerMode,
+                    onSelectPresetDuration = { preset ->
+                        viewModel.selectPresetDuration(preset)
+                    },
+                    onSelectTimerMode = { mode ->
+                        viewModel.setTimerDisplayMode(mode)
+                    },
+                    onOpenClockStyleSelector = {
+                        navController.navigate(Screen.ClockCanvas.route)
+                    },
+                    onOpenBackgroundSettings = {
+                        navController.navigate(Screen.ClockCanvas.route)
+                    },
+                    onOpenAudioSettings = {
+                        navController.navigate(Screen.Soundscape.route)
+                    },
+                    onStartFocus = {
+                        viewModel.startFocusSession()
+                        navController.navigate(Screen.ActiveFocus.route) {
+                            popUpTo(Screen.Home.route)
+                            launchSingleTop = true
+                        }
+                    },
+                    onBack = {
+                        navController.popBackStack()
                     }
+                )
+            }
+
+            composable(
+                route = Screen.ClockCanvas.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onOpenStartConfig = {
-                    navController.navigate(Screen.StartFocus.route)
-                },
-                onOpenClockStyleSelector = {
-                    viewModel.setShowClockStyleSheet(true)
-                },
-                onOpenProfileSelector = {
-                    viewModel.setShowProfileSelectorSheet(true)
-                },
-                onOpenSettings = {
-                    navController.navigate(Screen.SettingsHub.route)
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
                 }
-            )
-        }
-
-        composable(
-            route = Screen.StartFocus.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(300)
+            ) {
+                ClockCanvasSettingsScreen(
+                    preferences = uiState.preferences,
+                    onSelectClockStyle = { style -> viewModel.setClockStyle(style) },
+                    onSelectClockFont = { font -> viewModel.setClockFont(font) },
+                    onSelectBackgroundType = { type -> viewModel.setBackgroundType(type) },
+                    onSelectSolidColor = { hex -> viewModel.setSolidBackgroundColor(hex) },
+                    onSelectSingleImage = { uri -> viewModel.setBackgroundImageUri(uri) },
+                    onAddSlideshowImages = { uris -> viewModel.addSlideshowImageUris(uris) },
+                    onRemoveSlideshowImage = { uri -> viewModel.removeSlideshowImageUri(uri) },
+                    onSelectSlideshowInterval = { interval -> viewModel.setSlideshowInterval(interval) },
+                    onToggleSlideshowShuffle = { shuffle -> viewModel.setSlideshowShuffle(shuffle) },
+                    onSelectOverlayStrength = { strength -> viewModel.setBackgroundOverlayStrength(strength) },
+                    onToggle24Hour = { is24h -> viewModel.setTimeFormat(is24h) },
+                    onToggleShowDate = { show -> viewModel.setShowDate(show) },
+                    onToggleShowDayOfWeek = { show -> viewModel.setShowDayOfWeek(show) },
+                    onSelectDateFormat = { option -> viewModel.setDateFormatOption(option) },
+                    onBack = { navController.popBackStack() }
                 )
             }
-        ) {
-            StartFocusScreen(
-                preferences = uiState.preferences,
-                configuredDurationMinutes = uiState.configuredDurationMinutes,
-                isCustomDuration = uiState.isCustomDuration,
-                configuredTimerMode = uiState.configuredTimerMode,
-                onSelectPresetDuration = { preset ->
-                    viewModel.selectPresetDuration(preset)
+
+            composable(
+                route = Screen.Soundscape.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onSelectTimerMode = { mode ->
-                    viewModel.setTimerDisplayMode(mode)
-                },
-                onOpenClockStyleSelector = {
-                    viewModel.setShowClockStyleSheet(true)
-                },
-                onOpenBackgroundSettings = {
-                    navController.navigate(Screen.BackgroundSettings.route)
-                },
-                onOpenAudioSettings = {
-                    navController.navigate(Screen.AudioSettings.route)
-                },
-                onStartFocus = {
-                    viewModel.startFocusSession()
-                    navController.navigate(Screen.ActiveFocus.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                    }
-                },
-                onBack = {
-                    navController.popBackStack()
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
                 }
-            )
-        }
-
-        composable(
-            route = Screen.SettingsHub.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.SettingsHubScreen(
-                preferences = uiState.preferences,
-                session = uiState.session,
-                onNavigateToFocusSettings = { navController.navigate(Screen.FocusSettings.route) },
-                onNavigateToClockSettings = { navController.navigate(Screen.ClockSettings.route) },
-                onNavigateToBackgroundSettings = { navController.navigate(Screen.BackgroundSettings.route) },
-                onNavigateToAudioSettings = { navController.navigate(Screen.AudioSettings.route) },
-                onNavigateToGeneralSettings = { navController.navigate(Screen.GeneralSettings.route) },
-                onNavigateToAbout = { navController.navigate(Screen.About.route) },
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.FocusSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            ) {
+                com.sprinthon.focusclock.ui.screens.settings.AmbientSoundSettingsScreen(
+                    preferences = uiState.preferences,
+                    playerState = uiState.playerState,
+                    customTracks = uiState.customTracks,
+                    onSelectTrack = { trackId, previewPlay ->
+                        viewModel.selectTrackInSettings(trackId, previewPlay)
+                    },
+                    onAddCustomTrack = { uri, title, isYouTube ->
+                        viewModel.addCustomTrack(uri, title, isYouTube)
+                    },
+                    onDeleteCustomTrack = { trackId ->
+                        viewModel.deleteCustomTrack(trackId)
+                    },
+                    onTogglePlayPause = {
+                        viewModel.togglePlayerPlayPause()
+                    },
+                    onToggleAutoPlay = { autoPlay ->
+                        viewModel.setAutoPlayMusic(autoPlay)
+                    },
+                    onToggleLoop = { loop ->
+                        viewModel.setMusicLoop(loop)
+                    },
+                    onVolumeChange = { vol ->
+                        viewModel.setMusicVolume(vol)
+                    },
+                    onToggleShowWaveform = { show ->
+                        viewModel.setShowWaveform(show)
+                    },
+                    onBack = { navController.popBackStack() }
                 )
             }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.FocusSettingsScreen(
-                preferences = uiState.preferences,
-                session = uiState.session,
-                allProfiles = uiState.allProfiles,
-                onOpenProfileSelector = { viewModel.setShowProfileSelectorSheet(true) },
-                onSelectDefaultDuration = { minutes ->
-                    viewModel.setDefaultDuration(minutes)
-                },
-                onOpenCustomDurationDialog = {
-                    viewModel.setShowCustomDurationDialog(true)
-                },
-                onSelectTimerMode = { mode ->
-                    viewModel.setTimerDisplayMode(mode)
-                },
-                onToggleVibrateOnCompletion = { vibrate ->
-                    viewModel.setVibrateOnCompletion(vibrate)
-                },
-                onToggleNotifyOnCompletion = { notify ->
-                    viewModel.setNotifyOnCompletion(notify)
-                },
-                onToggleSoundOnCompletion = { sound ->
-                    viewModel.setSoundOnCompletion(sound)
-                },
-                onToggleConfirmBeforeExit = { confirm ->
-                    viewModel.setConfirmBeforeExit(confirm)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
 
-        composable(
-            route = Screen.ClockSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.ClockSettingsScreen(
-                preferences = uiState.preferences,
-                onSelectClockStyle = { style ->
-                    viewModel.setClockStyle(style)
+            composable(
+                route = Screen.SettingsHub.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onSelectClockFont = { font ->
-                    viewModel.setClockFont(font)
-                },
-                onToggle24Hour = { is24h ->
-                    viewModel.setTimeFormat(is24h)
-                },
-                onToggleShowDate = { show ->
-                    viewModel.setShowDate(show)
-                },
-                onToggleShowDayOfWeek = { show ->
-                    viewModel.setShowDayOfWeek(show)
-                },
-                onSelectDateFormat = { option ->
-                    viewModel.setDateFormatOption(option)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.AudioSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.AmbientSoundSettingsScreen(
-                preferences = uiState.preferences,
-                playerState = uiState.playerState,
-                customTracks = uiState.customTracks,
-                onSelectTrack = { trackId, previewPlay ->
-                    viewModel.selectTrackInSettings(trackId, previewPlay)
-                },
-                onAddCustomTrack = { uri, title, isYouTube ->
-                    viewModel.addCustomTrack(uri, title, isYouTube)
-                },
-                onDeleteCustomTrack = { trackId ->
-                    viewModel.deleteCustomTrack(trackId)
-                },
-                onTogglePlayPause = {
-                    viewModel.togglePlayerPlayPause()
-                },
-                onToggleAutoPlay = { autoPlay ->
-                    viewModel.setAutoPlayMusic(autoPlay)
-                },
-                onToggleLoop = { loop ->
-                    viewModel.setMusicLoop(loop)
-                },
-                onVolumeChange = { vol ->
-                    viewModel.setMusicVolume(vol)
-                },
-                onToggleShowWaveform = { show ->
-                    viewModel.setShowWaveform(show)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.GeneralSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.GeneralSettingsScreen(
-                preferences = uiState.preferences,
-                onToggleKeepScreenAwake = { awake ->
-                    viewModel.setKeepScreenAwake(awake)
-                },
-                onToggleAutoHideControls = { autoHide ->
-                    viewModel.setAutoHideControls(autoHide)
-                },
-                onToggleBatterySaver = { enabled ->
-                    viewModel.setBatterySaverEnabled(enabled)
-                },
-                onToggleImmersiveFullscreen = { enabled ->
-                    viewModel.setImmersiveFullscreen(enabled)
-                },
-                onToggleVibrateOnCompletion = { vibrate ->
-                    viewModel.setVibrateOnCompletion(vibrate)
-                },
-                onToggleConfirmBeforeExit = { confirm ->
-                    viewModel.setConfirmBeforeExit(confirm)
-                },
-                onResetAllSettings = {
-                    viewModel.resetAllSettings()
-                },
-                onNavigateToAbout = {
-                    navController.navigate(Screen.About.route)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.About.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            com.sprinthon.focusclock.ui.screens.settings.AboutScreen(
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.BackgroundSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            BackgroundSettingsScreen(
-                preferences = uiState.preferences,
-                onSelectBackgroundType = { type ->
-                    viewModel.setBackgroundType(type)
-                },
-                onSelectSolidColor = { hex ->
-                    viewModel.setSolidBackgroundColor(hex)
-                },
-                onSelectSingleImage = { uri ->
-                    viewModel.setBackgroundImageUri(uri)
-                },
-                onAddSlideshowImages = { uris ->
-                    viewModel.addSlideshowImageUris(uris)
-                },
-                onRemoveSlideshowImage = { uri ->
-                    viewModel.removeSlideshowImageUri(uri)
-                },
-                onSelectSlideshowInterval = { interval ->
-                    viewModel.setSlideshowInterval(interval)
-                },
-                onToggleSlideshowShuffle = { shuffle ->
-                    viewModel.setSlideshowShuffle(shuffle)
-                },
-                onSelectOverlayStrength = { strength ->
-                    viewModel.setBackgroundOverlayStrength(strength)
-                },
-                onBack = {
-                    navController.popBackStack()
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
                 }
-            )
-        }
+            ) {
+                com.sprinthon.focusclock.ui.screens.settings.SettingsHubScreen(
+                    preferences = uiState.preferences,
+                    session = uiState.session,
+                    onNavigateToFocusSettings = { navController.navigate(Screen.FocusSettings.route) },
+                    onNavigateToClockSettings = { navController.navigate(Screen.ClockCanvas.route) },
+                    onNavigateToBackgroundSettings = { navController.navigate(Screen.ClockCanvas.route) },
+                    onNavigateToAudioSettings = { navController.navigate(Screen.Soundscape.route) },
+                    onNavigateToGeneralSettings = { navController.navigate(Screen.GeneralSettings.route) },
+                    onNavigateToAbout = { navController.navigate(Screen.About.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(
-            route = Screen.ActiveFocus.route,
-            enterTransition = { fadeIn(animationSpec = tween(400)) },
-            exitTransition = { fadeOut(animationSpec = tween(400)) }
-        ) {
-            ActiveFocusScreen(
-                session = uiState.session,
-                preferences = uiState.preferences,
-                playerState = uiState.playerState,
-                controlsVisible = uiState.controlsVisible,
-                showExitDialog = uiState.showExitConfirmationDialog,
-                onScreenTapped = { viewModel.onScreenTapped() },
-                onPause = { viewModel.pauseFocusSession() },
-                onResume = { viewModel.resumeFocusSession() },
-                onCancelRequest = { viewModel.setExitConfirmationDialogVisible(true) },
-                onConfirmEndSession = {
-                    viewModel.setExitConfirmationDialogVisible(false)
-                    viewModel.cancelFocusSession()
-                    viewModel.resetSession()
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
+            composable(
+                route = Screen.FocusSettings.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onDismissExitDialog = {
-                    viewModel.setExitConfirmationDialogVisible(false)
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
+                }
+            ) {
+                com.sprinthon.focusclock.ui.screens.settings.FocusSettingsScreen(
+                    preferences = uiState.preferences,
+                    session = uiState.session,
+                    allProfiles = uiState.allProfiles,
+                    onOpenProfileSelector = { viewModel.setShowProfileSelectorSheet(true) },
+                    onSelectDefaultDuration = { minutes ->
+                        viewModel.setDefaultDuration(minutes)
+                    },
+                    onOpenCustomDurationDialog = {
+                        viewModel.setShowCustomDurationDialog(true)
+                    },
+                    onSelectTimerMode = { mode ->
+                        viewModel.setTimerDisplayMode(mode)
+                    },
+                    onToggleVibrateOnCompletion = { vibrate ->
+                        viewModel.setVibrateOnCompletion(vibrate)
+                    },
+                    onToggleNotifyOnCompletion = { notify ->
+                        viewModel.setNotifyOnCompletion(notify)
+                    },
+                    onToggleSoundOnCompletion = { sound ->
+                        viewModel.setSoundOnCompletion(sound)
+                    },
+                    onToggleConfirmBeforeExit = { confirm ->
+                        viewModel.setConfirmBeforeExit(confirm)
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Screen.GeneralSettings.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onFinishCompletedSession = {
-                    viewModel.resetSession()
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
+                }
+            ) {
+                com.sprinthon.focusclock.ui.screens.settings.GeneralSettingsScreen(
+                    preferences = uiState.preferences,
+                    onToggleKeepScreenAwake = { awake ->
+                        viewModel.setKeepScreenAwake(awake)
+                    },
+                    onToggleAutoHideControls = { autoHide ->
+                        viewModel.setAutoHideControls(autoHide)
+                    },
+                    onToggleBatterySaver = { enabled ->
+                        viewModel.setBatterySaverEnabled(enabled)
+                    },
+                    onToggleImmersiveFullscreen = { enabled ->
+                        viewModel.setImmersiveFullscreen(enabled)
+                    },
+                    onToggleVibrateOnCompletion = { vibrate ->
+                        viewModel.setVibrateOnCompletion(vibrate)
+                    },
+                    onToggleConfirmBeforeExit = { confirm ->
+                        viewModel.setConfirmBeforeExit(confirm)
+                    },
+                    onResetAllSettings = {
+                        viewModel.resetAllSettings()
+                    },
+                    onNavigateToAbout = {
+                        navController.navigate(Screen.About.route)
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Screen.About.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
                 },
-                onStartAgain = {
-                    viewModel.startFocusAgain()
-                },
-                onPlayPauseToggle = { viewModel.togglePlayerPlayPause() },
-                onStopPlayer = { viewModel.stopPlayer() },
-                onNextTrack = { viewModel.nextPlayerTrack() },
-                onPreviousTrack = { viewModel.previousPlayerTrack() },
-                onToggleLoop = { viewModel.togglePlayerLoop() }
-            )
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
+                }
+            ) {
+                com.sprinthon.focusclock.ui.screens.settings.AboutScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Screen.ActiveFocus.route,
+                enterTransition = { fadeIn(animationSpec = tween(400)) },
+                exitTransition = { fadeOut(animationSpec = tween(400)) }
+            ) {
+                ActiveFocusScreen(
+                    session = uiState.session,
+                    preferences = uiState.preferences,
+                    playerState = uiState.playerState,
+                    controlsVisible = uiState.controlsVisible,
+                    showExitDialog = uiState.showExitConfirmationDialog,
+                    onScreenTapped = { viewModel.onScreenTapped() },
+                    onPause = { viewModel.pauseFocusSession() },
+                    onResume = { viewModel.resumeFocusSession() },
+                    onCancelRequest = { viewModel.setExitConfirmationDialogVisible(true) },
+                    onConfirmEndSession = {
+                        viewModel.setExitConfirmationDialogVisible(false)
+                        viewModel.cancelFocusSession()
+                        viewModel.resetSession()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    },
+                    onDismissExitDialog = {
+                        viewModel.setExitConfirmationDialogVisible(false)
+                    },
+                    onFinishCompletedSession = {
+                        viewModel.resetSession()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    },
+                    onStartAgain = {
+                        viewModel.startFocusAgain()
+                    },
+                    onPlayPauseToggle = { viewModel.togglePlayerPlayPause() },
+                    onStopPlayer = { viewModel.stopPlayer() },
+                    onNextTrack = { viewModel.nextPlayerTrack() },
+                    onPreviousTrack = { viewModel.previousPlayerTrack() },
+                    onToggleLoop = { viewModel.togglePlayerLoop() }
+                )
+            }
         }
-    }
     } // End of GlobalScaffold
-
-    // Modal Clock Style Selector Sheet
-    if (uiState.showClockStyleSheet) {
-        ClockStyleBottomSheet(
-            selectedStyle = uiState.preferences.clockStyle,
-            timeData = currentTimeData,
-            clockFont = uiState.preferences.clockFont,
-            onStyleSelected = { style ->
-                viewModel.setClockStyle(style)
-                viewModel.setShowClockStyleSheet(false)
-            },
-            onDismiss = {
-                viewModel.setShowClockStyleSheet(false)
-            }
-        )
-    }
-
-    // Modal Clock Font Selector Sheet
-    if (uiState.showClockFontSheet) {
-        ClockFontBottomSheet(
-            selectedFont = uiState.preferences.clockFont,
-            onFontSelected = { font ->
-                viewModel.setClockFont(font)
-                viewModel.setShowClockFontSheet(false)
-            },
-            onDismiss = {
-                viewModel.setShowClockFontSheet(false)
-            }
-        )
-    }
 
     // Modal Profile Selector Sheet
     if (uiState.showProfileSelectorSheet) {

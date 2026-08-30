@@ -57,7 +57,8 @@ fun HomeScreen(
     allProfiles: List<FocusProfile>,
     onStartFocus: () -> Unit,
     onOpenStartConfig: () -> Unit,
-    onOpenClockStyleSelector: () -> Unit,
+    onOpenClockCanvas: () -> Unit,
+    onOpenAudio: () -> Unit = {},
     onOpenProfileSelector: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -80,7 +81,7 @@ fun HomeScreen(
             .padding(16.dp)
             .testTag("home_screen")
     ) {
-        // Top Ambient Controls: Clock Style, Active Profile & Settings Hub
+        // Top Ambient Controls: Clock & Canvas, Soundscape, Active Profile & Settings Hub
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -89,19 +90,19 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Clock style indicator button
+            // Clock & Canvas Studio Shortcut
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(DarkElevatedSurface.copy(alpha = 0.7f))
-                    .clickable(onClick = onOpenClockStyleSelector)
+                    .clickable(onClick = onOpenClockCanvas)
                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .testTag("open_clock_style_button")
+                    .testTag("open_clock_canvas_button")
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Palette,
-                    contentDescription = "Clock Style",
+                    contentDescription = "Clock & Canvas",
                     tint = FocusAmber,
                     modifier = Modifier.size(16.dp)
                 )

@@ -34,8 +34,6 @@ data class FocusUiState(
     val configuredDurationMinutes: Int = 25,
     val isCustomDuration: Boolean = false,
     val configuredTimerMode: TimerDisplayMode = TimerDisplayMode.COUNTDOWN,
-    val showClockStyleSheet: Boolean = false,
-    val showClockFontSheet: Boolean = false,
     val showCustomDurationDialog: Boolean = false,
     val showProfileSelectorSheet: Boolean = false,
     val controlsVisible: Boolean = false,
@@ -56,8 +54,6 @@ class FocusViewModel(
     private val _configuredDuration = MutableStateFlow(25)
     private val _isCustomDuration = MutableStateFlow(false)
     private val _configuredTimerMode = MutableStateFlow(TimerDisplayMode.COUNTDOWN)
-    private val _showClockStyleSheet = MutableStateFlow(false)
-    private val _showClockFontSheet = MutableStateFlow(false)
     private val _showCustomDurationDialog = MutableStateFlow(false)
     private val _showProfileSelectorSheet = MutableStateFlow(false)
     private val _controlsVisible = MutableStateFlow(false)
@@ -95,8 +91,6 @@ class FocusViewModel(
         _configuredDuration,
         _isCustomDuration,
         _configuredTimerMode,
-        _showClockStyleSheet,
-        _showClockFontSheet,
         _showCustomDurationDialog,
         _showProfileSelectorSheet,
         _controlsVisible,
@@ -110,17 +104,15 @@ class FocusViewModel(
         val duration = args[2] as Int
         val isCustom = args[3] as Boolean
         val timerMode = args[4] as TimerDisplayMode
-        val showClockStyle = args[5] as Boolean
-        val showClockFont = args[6] as Boolean
-        val showCustomDuration = args[7] as Boolean
-        val showProfiles = args[8] as Boolean
-        val controls = args[9] as Boolean
-        val exitDialog = args[10] as Boolean
-        val player = args[11] as PlayerUiState
+        val showCustomDuration = args[5] as Boolean
+        val showProfiles = args[6] as Boolean
+        val controls = args[7] as Boolean
+        val exitDialog = args[8] as Boolean
+        val player = args[9] as PlayerUiState
         @Suppress("UNCHECKED_CAST")
-        val customProfiles = args[12] as List<FocusProfile>
+        val customProfiles = args[10] as List<FocusProfile>
         @Suppress("UNCHECKED_CAST")
-        val customTracks = args[13] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
+        val customTracks = args[11] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
 
         FocusUiState(
             preferences = prefs,
@@ -128,8 +120,6 @@ class FocusViewModel(
             configuredDurationMinutes = duration,
             isCustomDuration = isCustom,
             configuredTimerMode = timerMode,
-            showClockStyleSheet = showClockStyle,
-            showClockFontSheet = showClockFont,
             showCustomDurationDialog = showCustomDuration,
             showProfileSelectorSheet = showProfiles,
             controlsVisible = controls,
@@ -517,13 +507,6 @@ class FocusViewModel(
         }
     }
 
-    fun setShowClockStyleSheet(show: Boolean) {
-        _showClockStyleSheet.value = show
-    }
-
-    fun setShowClockFontSheet(show: Boolean) {
-        _showClockFontSheet.value = show
-    }
 
     fun setShowCustomDurationDialog(show: Boolean) {
         _showCustomDurationDialog.value = show
@@ -667,11 +650,6 @@ class FocusViewModel(
         // Ensure music is fully stopped when session resets
         playerManager.stop()
         sessionManager.resetToIdle()
-    }
-
-    /** Stop player completely — used when navigating away from screens that play audio. */
-    fun stopPlayer() {
-        playerManager.stop()
     }
 
     override fun onCleared() {

@@ -184,10 +184,33 @@ fun SettingsHubScreen(
                 }
             }
 
-            SettingsSectionHeader(title = "Focus & Atmosphere")
+            SettingsSectionHeader(title = "Visual & Audio Customization")
             SettingsCard {
                 SettingsNavigationRow(
-                    title = "Focus Session",
+                    title = "Clock & Canvas Studio",
+                    subtitle = "Dial styles, typography fonts, backgrounds, and dimming",
+                    icon = Icons.Default.Palette,
+                    iconTint = FocusAmber,
+                    badgeValue = "$clockSummary · $backgroundSummary",
+                    testTag = "settings_clock_row",
+                    onClick = onNavigateToClockSettings
+                )
+                HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+                SettingsNavigationRow(
+                    title = "Soundscape & Music Player",
+                    subtitle = "Ambient catalog, custom tracks, autoplay, and looping",
+                    icon = Icons.Default.GraphicEq,
+                    iconTint = Color(0xFFFFB74D),
+                    badgeValue = audioSummary,
+                    testTag = "settings_audio_row",
+                    onClick = onNavigateToAudioSettings
+                )
+            }
+
+            SettingsSectionHeader(title = "Focus & System")
+            SettingsCard {
+                SettingsNavigationRow(
+                    title = "Focus Session Defaults",
                     subtitle = "Default duration, timer mode, and presets",
                     icon = Icons.Default.HourglassEmpty,
                     iconTint = FocusAmber,
@@ -197,40 +220,7 @@ fun SettingsHubScreen(
                 )
                 HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
                 SettingsNavigationRow(
-                    title = "Clock Display",
-                    subtitle = "Dial style, 12/24-hour format, and date",
-                    icon = Icons.Default.Schedule,
-                    iconTint = Color(0xFF64B5F6),
-                    badgeValue = clockSummary,
-                    testTag = "settings_clock_row",
-                    onClick = onNavigateToClockSettings
-                )
-                HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
-                SettingsNavigationRow(
-                    title = "Background",
-                    subtitle = "AMOLED colors, photos, and dimming overlay",
-                    icon = Icons.Default.Palette,
-                    iconTint = Color(0xFF81C784),
-                    badgeValue = backgroundSummary,
-                    testTag = "settings_background_row",
-                    onClick = onNavigateToBackgroundSettings
-                )
-                HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
-                SettingsNavigationRow(
-                    title = "Ambient Sound",
-                    subtitle = "Soundscapes, volume, autoplay, and looping",
-                    icon = Icons.Default.GraphicEq,
-                    iconTint = Color(0xFFFFB74D),
-                    badgeValue = audioSummary,
-                    testTag = "settings_audio_row",
-                    onClick = onNavigateToAudioSettings
-                )
-            }
-
-            SettingsSectionHeader(title = "Device & App")
-            SettingsCard {
-                SettingsNavigationRow(
-                    title = "General Preferences",
+                    title = "Device & App Preferences",
                     subtitle = "Awake lock, auto-hide, haptics, and reset",
                     icon = Icons.Default.Tune,
                     iconTint = Color(0xFFBA68C8),
@@ -238,10 +228,13 @@ fun SettingsHubScreen(
                     testTag = "settings_general_row",
                     onClick = onNavigateToGeneralSettings
                 )
-                HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+            }
+
+            SettingsSectionHeader(title = "About & Information")
+            SettingsCard {
                 SettingsNavigationRow(
                     title = "About Focus Clock",
-                    subtitle = "Version 1.6.0 · Offline & Private",
+                    subtitle = "Version 1.6.0 · Offline & 100% Private",
                     icon = Icons.Default.Info,
                     iconTint = Color(0xFF90A4AE),
                     testTag = "settings_about_row",

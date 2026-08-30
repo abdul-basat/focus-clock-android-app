@@ -271,57 +271,39 @@ fun StartFocusScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // SECTION 3: CLOCK STYLE
+            // SECTION 3: HERO CLOCK & CANVAS
             SectionHeader(
-                title = "HERO CLOCK STYLE",
+                title = "HERO CLOCK & CANVAS",
                 icon = Icons.Outlined.Palette
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Clock style preview card with Change action
-            ClockStylePreviewRow(
-                style = preferences.clockStyle,
-                clockFont = preferences.clockFont,
-                timeData = timeData,
-                onChangeClick = onOpenClockStyleSelector
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // SECTION 4: BACKGROUND SUMMARY
-            SectionHeader(
-                title = "BACKGROUND",
-                icon = Icons.Outlined.Wallpaper
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            val (bgTitle, bgSubtitle) = when (preferences.backgroundType) {
+            val bgSummaryText = when (preferences.backgroundType) {
                 com.sprinthon.focusclock.domain.model.BackgroundType.SOLID_COLOR -> {
-                    val colorName = com.sprinthon.focusclock.domain.model.CuratedColors.findByHex(preferences.solidBackgroundColor)?.name ?: "Custom Color"
-                    colorName to "Solid color (${String.format("#%06X", 0xFFFFFF and preferences.solidBackgroundColor.toInt())})"
+                    val colorName = com.sprinthon.focusclock.domain.model.CuratedColors.findByHex(preferences.solidBackgroundColor)?.name ?: "Solid Color"
+                    "$colorName · ${(preferences.backgroundOverlayStrength * 100).toInt()}% Dim"
                 }
                 com.sprinthon.focusclock.domain.model.BackgroundType.SINGLE_IMAGE -> {
-                    "Photo Background" to if (!preferences.backgroundImageUri.isNullOrBlank()) "Custom photo active" else "No photo selected"
+                    "Photo Wallpaper · ${(preferences.backgroundOverlayStrength * 100).toInt()}% Dim"
                 }
                 com.sprinthon.focusclock.domain.model.BackgroundType.SLIDESHOW -> {
-                    "Slideshow Background" to "${preferences.slideshowImageUris.size} photos · ${preferences.slideshowInterval.label}"
+                    "${preferences.slideshowImageUris.size} Photos · ${preferences.slideshowInterval.label}"
                 }
             }
 
-            ConfigurationSummaryRow(
-                title = bgTitle,
-                subtitle = bgSubtitle,
-                tag = "background_summary_row",
-                onClick = onOpenBackgroundSettings
+            ClockCanvasPreviewRow(
+                preferences = preferences,
+                timeData = timeData,
+                bgSummary = bgSummaryText,
+                onClick = onOpenBackgroundSettings // navigates to unified customizer
             )
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // SECTION 5: SOUND SUMMARY
+            // SECTION 4: SOUNDSCAPE
             SectionHeader(
-                title = "AMBIENT SOUND",
+                title = "AMBIENT SOUNDSCAPE",
                 icon = Icons.Outlined.MusicNote
             )
 
@@ -440,11 +422,11 @@ private fun TimerModeOption(
 }
 
 @Composable
-private fun ClockStylePreviewRow(
-    style: ClockStyle,
-    clockFont: com.sprinthon.focusclock.ui.clock.ClockFont,
+private fun ClockCanvasPreviewRow(
+    preferences: FocusPreferences,
     timeData: com.sprinthon.focusclock.ui.clock.ClockTimeData,
-    onChangeClick: () -> Unit
+    bgSummary: String,
+    onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(16.dp)
 
@@ -454,25 +436,31 @@ private fun ClockStylePreviewRow(
             .clip(shape)
             .background(DarkCardSurface)
             .border(0.5.dp, DarkOutline, shape)
-            .clickable(onClick = onChangeClick)
+            .clickable(onClick = onClick)
             .padding(12.dp)
-            .testTag("clock_style_preview_row"),
+            .testTag("clock_canvas_preview_row"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Mini preview box
+        // Mini preview box with synchronized background and clock
         Box(
             modifier = Modifier
-                .size(width = 90.dp, height = 75.dp)
+                .size(width = 95.dp, height = 75.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black),
+                .border(0.5.dp, DarkOutline, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
+            com.sprinthon.focusclock.ui.components.FocusBackground(
+                preferences = preferences,
+                isInteractivePreview = true,
+                modifier = Modifier.fillMaxSize()
+            )
+
             ClockRenderer(
-                style = style,
+                style = preferences.clockStyle,
                 timeData = timeData,
-                clockFont = clockFont,
-                scale = 0.5f,
+                clockFont = preferences.clockFont,
+                scale = 0.48f,
                 showDate = false,
                 showDayOfWeek = false
             )
@@ -482,14 +470,14 @@ private fun ClockStylePreviewRow(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = style.displayName,
+                text = "${preferences.clockStyle.displayName} · ${preferences.clockFont.displayName}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = style.description,
+                text = bgSummary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
@@ -501,7 +489,7 @@ private fun ClockStylePreviewRow(
             modifier = Modifier.padding(start = 8.dp)
         ) {
             Text(
-                text = "Change",
+                text = "Customize",
                 style = MaterialTheme.typography.labelMedium,
                 color = FocusAmber,
                 fontWeight = FontWeight.SemiBold
