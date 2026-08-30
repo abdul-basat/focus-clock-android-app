@@ -1,0 +1,8 @@
+{
+  "name": "Focus Clock",
+  "description": "A calm, distraction-free ambient focus clock and timer with music and customizable backgrounds.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
