@@ -119,7 +119,7 @@ fun EndFocusDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Your active focus session will stop. Completed minutes will be saved to your history.",
+                        text = "Your active focus session will stop and your focus timer will be reset.",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                         color = Color.White.copy(alpha = 0.70f),
                         textAlign = TextAlign.Center,

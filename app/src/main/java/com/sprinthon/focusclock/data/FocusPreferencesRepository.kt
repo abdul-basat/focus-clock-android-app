@@ -56,7 +56,6 @@ class FocusPreferencesRepository(private val context: Context) {
         val NOTIFY_ON_COMPLETION = booleanPreferencesKey("notify_on_completion")
         val SOUND_ON_COMPLETION = booleanPreferencesKey("sound_on_completion")
         val CUSTOM_PROFILES_JSON = stringPreferencesKey("custom_profiles_json")
-        val HISTORY_RECORDS_JSON = stringPreferencesKey("history_records_json")
         val CUSTOM_TRACKS_JSON = stringPreferencesKey("custom_tracks_json")
     }
 
@@ -119,10 +118,7 @@ class FocusPreferencesRepository(private val context: Context) {
         deserializeCustomProfiles(rawJson)
     }
 
-    val historyRecordsFlow: Flow<List<com.sprinthon.focusclock.domain.model.FocusHistoryRecord>> = context.focusDataStore.data.map { preferences ->
-        val rawJson = preferences[PreferencesKeys.HISTORY_RECORDS_JSON] ?: "[]"
-        deserializeHistoryRecords(rawJson)
-    }
+
 
     val customTracksFlow: Flow<List<com.sprinthon.focusclock.domain.model.FocusTrack>> = context.focusDataStore.data.map { preferences ->
         val rawJson = preferences[PreferencesKeys.CUSTOM_TRACKS_JSON] ?: "[]"
@@ -332,21 +328,7 @@ class FocusPreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun addHistoryRecord(record: com.sprinthon.focusclock.domain.model.FocusHistoryRecord) {
-        context.focusDataStore.edit { prefs ->
-            val rawJson = prefs[PreferencesKeys.HISTORY_RECORDS_JSON] ?: "[]"
-            val currentList = deserializeHistoryRecords(rawJson).toMutableList()
-            currentList.add(0, record)
-            val trimmedList = currentList.take(20) // Retain last 20 sessions max
-            prefs[PreferencesKeys.HISTORY_RECORDS_JSON] = serializeHistoryRecords(trimmedList)
-        }
-    }
 
-    suspend fun clearHistoryRecords() {
-        context.focusDataStore.edit { prefs ->
-            prefs[PreferencesKeys.HISTORY_RECORDS_JSON] = "[]"
-        }
-    }
 
     suspend fun resetAllSettingsToDefault() {
         context.focusDataStore.edit { it.clear() }
@@ -415,42 +397,7 @@ class FocusPreferencesRepository(private val context: Context) {
         return list
     }
 
-    private fun serializeHistoryRecords(records: List<com.sprinthon.focusclock.domain.model.FocusHistoryRecord>): String {
-        val array = org.json.JSONArray()
-        for (r in records) {
-            val obj = org.json.JSONObject()
-            obj.put("id", r.id)
-            obj.put("timestamp", r.timestamp)
-            obj.put("durationMinutes", r.durationMinutes)
-            obj.put("actualSecondsElapsed", r.actualSecondsElapsed)
-            obj.put("completed", r.completed)
-            obj.put("profileName", r.profileName)
-            array.put(obj)
-        }
-        return array.toString()
-    }
 
-    private fun deserializeHistoryRecords(rawJson: String): List<com.sprinthon.focusclock.domain.model.FocusHistoryRecord> {
-        val list = mutableListOf<com.sprinthon.focusclock.domain.model.FocusHistoryRecord>()
-        try {
-            val array = org.json.JSONArray(rawJson)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val record = com.sprinthon.focusclock.domain.model.FocusHistoryRecord(
-                    id = obj.optString("id", java.util.UUID.randomUUID().toString()),
-                    timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
-                    durationMinutes = obj.optInt("durationMinutes", 25),
-                    actualSecondsElapsed = obj.optLong("actualSecondsElapsed", 0L),
-                    completed = obj.optBoolean("completed", true),
-                    profileName = obj.optString("profileName", "Deep Work")
-                )
-                list.add(record)
-            }
-        } catch (e: Exception) {
-            // Fail gracefully
-        }
-        return list
-    }
 
     private fun serializeCustomTracks(tracks: List<com.sprinthon.focusclock.domain.model.FocusTrack>): String {
         val array = org.json.JSONArray()

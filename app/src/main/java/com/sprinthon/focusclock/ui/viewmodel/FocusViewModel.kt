@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import com.sprinthon.focusclock.data.FocusPreferencesRepository
 import com.sprinthon.focusclock.domain.model.ClockStyle
-import com.sprinthon.focusclock.domain.model.FocusHistoryRecord
 import com.sprinthon.focusclock.domain.model.FocusPreferences
 import com.sprinthon.focusclock.domain.model.FocusProfile
 import com.sprinthon.focusclock.domain.model.PresetDuration
@@ -43,7 +42,6 @@ data class FocusUiState(
     val showExitConfirmationDialog: Boolean = false,
     val playerState: PlayerUiState = PlayerUiState(),
     val allProfiles: List<FocusProfile> = FocusProfile.DEFAULT_PROFILES,
-    val historyRecords: List<FocusHistoryRecord> = emptyList(),
     val customTracks: List<com.sprinthon.focusclock.domain.model.FocusTrack> = emptyList()
 )
 
@@ -66,7 +64,6 @@ class FocusViewModel(
     private val _showExitConfirmationDialog = MutableStateFlow(false)
 
     private var autoHideJob: Job? = null
-    private var lastRecordedSessionId: String? = null
 
     val preferencesState: StateFlow<FocusPreferences> = repository.preferencesFlow.stateIn(
         scope = viewModelScope,
@@ -86,11 +83,7 @@ class FocusViewModel(
         initialValue = emptyList()
     )
 
-    val historyRecordsState: StateFlow<List<FocusHistoryRecord>> = repository.historyRecordsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = emptyList()
-    )
+
 
     val sessionState: StateFlow<SessionSnapshot> = sessionManager.snapshot
 
@@ -110,7 +103,6 @@ class FocusViewModel(
         _showExitConfirmationDialog,
         playerState,
         customProfilesState,
-        historyRecordsState,
         customTracksState
     ) { args: Array<Any> ->
         val prefs = args[0] as FocusPreferences
@@ -128,9 +120,7 @@ class FocusViewModel(
         @Suppress("UNCHECKED_CAST")
         val customProfiles = args[12] as List<FocusProfile>
         @Suppress("UNCHECKED_CAST")
-        val history = args[13] as List<FocusHistoryRecord>
-        @Suppress("UNCHECKED_CAST")
-        val customTracks = args[14] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
+        val customTracks = args[13] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
 
         FocusUiState(
             preferences = prefs,
@@ -146,7 +136,6 @@ class FocusViewModel(
             showExitConfirmationDialog = exitDialog,
             playerState = player,
             allProfiles = FocusProfile.DEFAULT_PROFILES + customProfiles,
-            historyRecords = history,
             customTracks = customTracks
         )
     }.stateIn(
@@ -180,16 +169,15 @@ class FocusViewModel(
             }
         }
 
-        // Monitor session completion to trigger notifications, sounds, haptics, and history logging
+        // Monitor session completion to trigger notifications, sounds, haptics, and stop music
         viewModelScope.launch {
+            var lastCompletedSessionId: String? = null
             sessionState.collect { session ->
-                if (session.state == SessionState.COMPLETED && session.sessionId != lastRecordedSessionId && session.sessionId.isNotEmpty()) {
-                    lastRecordedSessionId = session.sessionId
+                if (session.state == SessionState.COMPLETED && session.sessionId != lastCompletedSessionId && session.sessionId.isNotEmpty()) {
+                    lastCompletedSessionId = session.sessionId
 
-                    // 1. Pause background music if playing
-                    if (playerManager.playerUiState.value.isPlaying) {
-                        playerManager.pause()
-                    }
+                    // 1. Stop background music
+                    playerManager.stop()
 
                     val currentPrefs = preferencesState.value
 
@@ -212,17 +200,6 @@ class FocusViewModel(
                             durationMinutes = session.durationMinutes,
                             profileName = session.profileName
                         )
-                    }
-
-                    // 5. Add to session history
-                    val record = FocusHistoryRecord(
-                        durationMinutes = session.durationMinutes,
-                        actualSecondsElapsed = session.elapsedMillis / 1000,
-                        completed = true,
-                        profileName = session.profileName
-                    )
-                    viewModelScope.launch {
-                        repository.addHistoryRecord(record)
                     }
                 }
             }
@@ -306,11 +283,7 @@ class FocusViewModel(
         _showProfileSelectorSheet.value = show
     }
 
-    fun clearHistory() {
-        viewModelScope.launch {
-            repository.clearHistoryRecords()
-        }
-    }
+
 
     fun selectPresetDuration(preset: PresetDuration) {
         if (preset == PresetDuration.CUSTOM) {
@@ -663,6 +636,8 @@ class FocusViewModel(
 
     fun pauseFocusSession() {
         sessionManager.pauseSession()
+        // Stop music when focus is paused
+        playerManager.pause()
         showControlsTemporarily()
     }
 
@@ -676,22 +651,8 @@ class FocusViewModel(
     }
 
     fun cancelFocusSession() {
-        val currentSession = sessionState.value
-        val elapsedSec = currentSession.elapsedMillis / 1000
-
-        // If elapsed is meaningful (> 10s), log as cancelled/partial session in history
-        if (elapsedSec >= 10) {
-            viewModelScope.launch {
-                val record = FocusHistoryRecord(
-                    durationMinutes = currentSession.durationMinutes,
-                    actualSecondsElapsed = elapsedSec,
-                    completed = false,
-                    profileName = currentSession.profileName
-                )
-                repository.addHistoryRecord(record)
-            }
-        }
-
+        // Stop music immediately when session is cancelled
+        playerManager.stop()
         sessionManager.cancelSession()
     }
 
@@ -703,7 +664,14 @@ class FocusViewModel(
         _showExitConfirmationDialog.value = false
         _controlsVisible.value = false
         autoHideJob?.cancel()
+        // Ensure music is fully stopped when session resets
+        playerManager.stop()
         sessionManager.resetToIdle()
+    }
+
+    /** Stop player completely — used when navigating away from screens that play audio. */
+    fun stopPlayer() {
+        playerManager.stop()
     }
 
     override fun onCleared() {

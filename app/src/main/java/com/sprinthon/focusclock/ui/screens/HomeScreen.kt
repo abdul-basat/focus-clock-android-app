@@ -1,7 +1,6 @@
 package com.sprinthon.focusclock.ui.screens
 
 import android.content.res.Configuration
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,21 +13,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
@@ -37,13 +29,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,24 +38,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sprinthon.focusclock.domain.model.ClockStyle
-import com.sprinthon.focusclock.domain.model.FocusHistoryRecord
 import com.sprinthon.focusclock.domain.model.FocusPreferences
 import com.sprinthon.focusclock.domain.model.FocusProfile
 import com.sprinthon.focusclock.domain.model.TimerDisplayMode
 import com.sprinthon.focusclock.ui.clock.ClockRenderer
 import com.sprinthon.focusclock.ui.clock.rememberCurrentTimeData
 import com.sprinthon.focusclock.ui.theme.AmoledBlack
-import com.sprinthon.focusclock.ui.theme.DarkCardSurface
 import com.sprinthon.focusclock.ui.theme.DarkElevatedSurface
-import com.sprinthon.focusclock.ui.theme.DarkOutline
 import com.sprinthon.focusclock.ui.theme.FocusAmber
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun HomeScreen(
@@ -76,7 +55,6 @@ fun HomeScreen(
     configuredDurationMinutes: Int,
     configuredTimerMode: TimerDisplayMode,
     allProfiles: List<FocusProfile>,
-    historyRecords: List<FocusHistoryRecord>,
     onStartFocus: () -> Unit,
     onOpenStartConfig: () -> Unit,
     onOpenClockStyleSelector: () -> Unit,
@@ -87,27 +65,12 @@ fun HomeScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val timeData = rememberCurrentTimeData(is24Hour = preferences.timeFormat24Hour)
-    var showHistorySection by remember { mutableStateOf(false) }
 
     val activeProfile = allProfiles.find { it.id == preferences.activeProfileId }
     val profileName = activeProfile?.name ?: "Custom"
 
     val durationLabel = if (configuredDurationMinutes <= 0) "Unlimited" else "$configuredDurationMinutes min"
     val modeLabel = if (configuredDurationMinutes <= 0) "Elapsed" else configuredTimerMode.name.lowercase().replaceFirstChar { it.uppercase() }
-
-    // Calculate today's focus minutes
-    val nowMillis = System.currentTimeMillis()
-    val todayStartMillis = remember(nowMillis) {
-        val cal = java.util.Calendar.getInstance()
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0)
-        cal.set(java.util.Calendar.MILLISECOND, 0)
-        cal.timeInMillis
-    }
-
-    val todayRecords = historyRecords.filter { it.timestamp >= todayStartMillis && it.completed }
-    val todayMinutesFocused = todayRecords.sumOf { (it.actualSecondsElapsed / 60).toInt() }
 
     Box(
         modifier = modifier
@@ -269,112 +232,13 @@ fun HomeScreen(
                     )
                 }
 
-                // Bottom Session Summary, History Toggle & Start Action
+                // Bottom Session Summary & Start Action
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
-                    // Daily focus metrics & recent history banner
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = DarkElevatedSurface.copy(alpha = 0.6f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, DarkOutline.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { showHistorySection = !showHistorySection }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                            .testTag("today_focus_history_banner")
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.History,
-                                        contentDescription = null,
-                                        tint = FocusAmber,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = if (todayMinutesFocused > 0) "Today: $todayMinutesFocused min (${todayRecords.size} session${if (todayRecords.size > 1) "s" else ""})" else "Today: No sessions yet",
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 13.sp
-                                        ),
-                                        color = if (todayMinutesFocused > 0) Color.White else Color(0xFF8E8E96)
-                                    )
-                                }
-
-                                Icon(
-                                    imageVector = if (showHistorySection) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = Color(0xFF8E8E96),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            AnimatedVisibility(visible = showHistorySection) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 10.dp)
-                                ) {
-                                    if (historyRecords.isEmpty()) {
-                                        Text(
-                                            text = "Complete your first focus session to see it logged here.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color(0xFF7A7A84),
-                                            modifier = Modifier.padding(vertical = 4.dp)
-                                        )
-                                    } else {
-                                        val timeFormatter = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                        historyRecords.take(4).forEach { record ->
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 3.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.CheckCircle,
-                                                        contentDescription = null,
-                                                        tint = if (record.completed) Color(0xFF81C784) else FocusAmber,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(
-                                                        text = record.profileName,
-                                                        style = MaterialTheme.typography.bodySmall.copy(
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Medium
-                                                        ),
-                                                        color = Color(0xFFE2E2E6)
-                                                    )
-                                                }
-                                                Text(
-                                                    text = "${record.actualSecondsElapsed / 60} min · ${timeFormatter.format(Date(record.timestamp))}",
-                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                    color = Color(0xFF8E8E96)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     SessionSummaryBadge(
                         durationLabel = durationLabel,
                         modeLabel = modeLabel,

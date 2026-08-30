@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.sprinthon.focusclock.domain.model.SessionState
 import com.sprinthon.focusclock.ui.clock.ClockFontBottomSheet
@@ -56,6 +57,27 @@ fun AppNavigation(
         if (uiState.session.state == SessionState.RUNNING && navController.currentDestination?.route != Screen.ActiveFocus.route) {
             navController.navigate(Screen.ActiveFocus.route) {
                 launchSingleTop = true
+            }
+        }
+    }
+
+    // Stop music when navigating away from ActiveFocus or AudioSettings (preview)
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    LaunchedEffect(currentRoute) {
+        // If user navigated away from ActiveFocus, stop any lingering playback
+        if (currentRoute != null && currentRoute != Screen.ActiveFocus.route) {
+            val sessionIsActive = uiState.session.state == SessionState.RUNNING || uiState.session.state == SessionState.PAUSED
+            if (!sessionIsActive && viewModel.playerManager.playerUiState.value.isPlaying) {
+                viewModel.stopPlayer()
+            }
+        }
+        // If user navigated away from Ambient settings, stop any preview playback
+        // (unless a focus session is actively running)
+        if (currentRoute != null && currentRoute != Screen.AudioSettings.route) {
+            val sessionIsActive = uiState.session.state == SessionState.RUNNING || uiState.session.state == SessionState.PAUSED
+            if (!sessionIsActive && viewModel.playerManager.playerUiState.value.isPlaying) {
+                viewModel.stopPlayer()
             }
         }
     }
@@ -108,7 +130,6 @@ fun AppNavigation(
                 configuredDurationMinutes = uiState.configuredDurationMinutes,
                 configuredTimerMode = uiState.configuredTimerMode,
                 allProfiles = uiState.allProfiles,
-                historyRecords = uiState.historyRecords,
                 onStartFocus = {
                     viewModel.startFocusSession()
                     navController.navigate(Screen.ActiveFocus.route) {
@@ -246,9 +267,6 @@ fun AppNavigation(
                 },
                 onToggleConfirmBeforeExit = { confirm ->
                     viewModel.setConfirmBeforeExit(confirm)
-                },
-                onClearHistory = {
-                    viewModel.clearHistory()
                 },
                 onBack = { navController.popBackStack() }
             )

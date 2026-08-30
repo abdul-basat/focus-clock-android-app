@@ -26,7 +26,6 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -78,7 +77,6 @@ fun FocusSettingsScreen(
     onToggleNotifyOnCompletion: (Boolean) -> Unit = {},
     onToggleSoundOnCompletion: (Boolean) -> Unit = {},
     onToggleConfirmBeforeExit: (Boolean) -> Unit,
-    onClearHistory: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -353,48 +351,6 @@ fun FocusSettingsScreen(
                 )
             }
 
-            SettingsSectionHeader(title = "Focus History")
-            SettingsCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onClearHistory)
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                        .testTag("clear_history_row"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF3B1818),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = null,
-                            tint = Color(0xFFFF6B6B),
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Clear Focus History",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 15.sp
-                            ),
-                            color = Color(0xFFFF6B6B)
-                        )
-                        Text(
-                            text = "Reset all logged session records and metrics",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = Color(0xFF8E8E96)
-                        )
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(32.dp))
         }

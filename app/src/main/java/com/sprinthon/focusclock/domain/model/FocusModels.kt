@@ -154,14 +154,6 @@ data class FocusProfile(
     }
 }
 
-data class FocusHistoryRecord(
-    val id: String = java.util.UUID.randomUUID().toString(),
-    val timestamp: Long = System.currentTimeMillis(),
-    val durationMinutes: Int = 25,
-    val actualSecondsElapsed: Long = 1500L,
-    val completed: Boolean = true,
-    val profileName: String = "Deep Work"
-)
 
 data class FocusPreferences(
     val clockStyle: ClockStyle = ClockStyle.CLEAN_DIGITAL,
