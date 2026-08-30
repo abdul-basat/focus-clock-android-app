@@ -148,7 +148,7 @@ fun SettingsHubScreen(
                 modifier = Modifier
                     .widthIn(max = 600.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 12.dp)
                     .verticalScroll(scrollState)
             ) {
             // Active session banner if running

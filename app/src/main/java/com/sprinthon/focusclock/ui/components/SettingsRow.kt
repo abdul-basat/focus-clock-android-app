@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +67,14 @@ fun SettingsNavigationRow(
     testTag: String? = null,
     onClick: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+    val iconSize = if (isSmallScreen) 32.dp else 38.dp
+    val iconInnerSize = if (isSmallScreen) 18.dp else 20.dp
+    val spacing = if (isSmallScreen) 10.dp else 14.dp
+    val horizontalPadding = if (isSmallScreen) 10.dp else 12.dp
+    val verticalPadding = if (isSmallScreen) 10.dp else 12.dp
+    
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -73,13 +82,13 @@ fun SettingsNavigationRow(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(iconSize)
                 .clip(CircleShape)
                 .background(iconTint.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
@@ -88,28 +97,32 @@ fun SettingsNavigationRow(
                 imageVector = icon,
                 contentDescription = null,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(iconInnerSize)
             )
         }
 
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(spacing))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp
+                    fontSize = if (isSmallScreen) 14.sp else 16.sp
                 ),
-                color = Color.White
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 13.sp
+                        fontSize = if (isSmallScreen) 11.sp else 13.sp
                     ),
-                    color = Color(0xFF9E9EA4)
+                    color = Color(0xFF9E9EA4),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -119,19 +132,19 @@ fun SettingsNavigationRow(
                 shape = RoundedCornerShape(8.dp),
                 color = Color(0xFF222228),
                 modifier = Modifier
-                    .padding(start = 6.dp, end = 4.dp)
-                    .widthIn(max = 140.dp)
+                    .padding(start = 4.dp, end = 2.dp)
+                    .widthIn(max = if (isSmallScreen) 100.dp else 120.dp)
             ) {
                 Text(
                     text = badgeValue,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        fontSize = 12.sp,
+                        fontSize = if (isSmallScreen) 11.sp else 12.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
                     ),
                     color = FocusAmber,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = if (isSmallScreen) 6.dp else 8.dp, vertical = if (isSmallScreen) 3.dp else 4.dp)
                 )
             }
         }
@@ -140,7 +153,7 @@ fun SettingsNavigationRow(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = Color(0xFF6B6B73),
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(if (isSmallScreen) 18.dp else 20.dp)
         )
     }
 }
@@ -155,6 +168,14 @@ fun SettingsToggleRow(
     testTag: String? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+    val iconSize = if (isSmallScreen) 32.dp else 38.dp
+    val iconInnerSize = if (isSmallScreen) 18.dp else 20.dp
+    val spacing = if (isSmallScreen) 10.dp else 14.dp
+    val horizontalPadding = if (isSmallScreen) 10.dp else 12.dp
+    val verticalPadding = if (isSmallScreen) 10.dp else 12.dp
+    
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -162,14 +183,14 @@ fun SettingsToggleRow(
                 role = Role.Switch,
                 onClick = { onCheckedChange(!checked) }
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(iconSize)
                     .clip(CircleShape)
                     .background(iconTint.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
@@ -178,10 +199,10 @@ fun SettingsToggleRow(
                     imageVector = icon,
                     contentDescription = null,
                     tint = iconTint,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(iconInnerSize)
                 )
             }
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(spacing))
         }
 
         Column(modifier = Modifier.weight(1f)) {
@@ -189,17 +210,21 @@ fun SettingsToggleRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp
+                    fontSize = if (isSmallScreen) 14.sp else 15.sp
                 ),
-                color = Color.White
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp
+                        fontSize = if (isSmallScreen) 11.sp else 12.sp
                     ),
-                    color = Color(0xFF9E9EA4)
+                    color = Color(0xFF9E9EA4),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -222,16 +247,21 @@ fun SettingsSectionHeader(
     title: String,
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+    val horizontalPadding = if (isSmallScreen) 12.dp else 16.dp
+    val topPadding = if (isSmallScreen) 16.dp else 20.dp
+    
     Text(
         text = title.uppercase(),
         style = MaterialTheme.typography.labelSmall.copy(
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.2.sp,
-            fontSize = 11.sp
+            fontSize = if (isSmallScreen) 10.sp else 11.sp
         ),
         color = Color(0xFF888890),
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp)
+            .padding(start = horizontalPadding, end = horizontalPadding, top = topPadding, bottom = 8.dp)
     )
 }
