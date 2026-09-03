@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -12,14 +13,14 @@ plugins {
 
 android {
   namespace = "com.sprinthon.focusclock"
-  compileSdk = 35
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.sprinthon.focusclock"
     minSdk = 24
-    targetSdk = 35
-    versionCode = 10
-    versionName = "10.0"
+    targetSdk = 36
+    versionCode = 27
+    versionName = "0.0.0.27"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -29,6 +30,13 @@ android {
       val envKeystore = System.getenv("KEYSTORE_PATH")
       val uploadKey = file("${rootDir}/my-upload-key.jks")
       val debugKey = file("${rootDir}/debug.keystore")
+      val base64Key = file("${rootDir}/debug.keystore.base64")
+      if (!debugKey.exists() && base64Key.exists()) {
+        try {
+          val decoded = Base64.getDecoder().decode(base64Key.readText().trim())
+          debugKey.writeBytes(decoded)
+        } catch (_: Exception) {}
+      }
       val selectedFile = when {
         envKeystore != null && file(envKeystore).exists() -> file(envKeystore)
         uploadKey.exists() -> uploadKey
@@ -46,7 +54,15 @@ android {
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      val debugKey = file("${rootDir}/debug.keystore")
+      val base64Key = file("${rootDir}/debug.keystore.base64")
+      if (!debugKey.exists() && base64Key.exists()) {
+        try {
+          val decoded = Base64.getDecoder().decode(base64Key.readText().trim())
+          debugKey.writeBytes(decoded)
+        } catch (_: Exception) {}
+      }
+      storeFile = debugKey
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -75,6 +91,16 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  packaging {
+    resources {
+      excludes += listOf(
+        "/META-INF/{AL2.0,LGPL2.1}",
+        "/META-INF/*.version",
+        "/META-INF/INDEX.LIST",
+        "/META-INF/DEPENDENCIES"
+      )
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -112,7 +138,7 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.androidx.media3.exoplayer)
   implementation(libs.androidx.media3.session)
-  implementation(libs.androidx.media3.ui)
+  // implementation(libs.androidx.media3.ui) - Commented out to reduce APK size (FocusClock uses custom Compose audio controls)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   testImplementation(libs.androidx.compose.ui.test.junit4)

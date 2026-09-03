@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class FocusAudioPlaybackTest {
 
     private lateinit var application: Application
@@ -54,7 +54,51 @@ class FocusAudioPlaybackTest {
         assertNotNull(mediaItem)
         assertEquals("deep_focus", mediaItem.mediaId)
         assertEquals("Deep Focus", mediaItem.mediaMetadata.title.toString())
-        assertNotNull(mediaItem.requestMetadata.mediaUri)
+        assertNotNull(mediaItem.localConfiguration?.uri)
+    }
+
+    @Test
+    fun testYouTubeIdExtraction() {
+        val watchUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        assertEquals("dQw4w9WgXcQ", com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(watchUrl))
+
+        val shortUrl = "https://youtu.be/dQw4w9WgXcQ"
+        assertEquals("dQw4w9WgXcQ", com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(shortUrl))
+
+        val embedUrl = "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        assertEquals("dQw4w9WgXcQ", com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(embedUrl))
+
+        val shortsUrl = "https://www.youtube.com/shorts/dQw4w9WgXcQ"
+        assertEquals("dQw4w9WgXcQ", com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(shortsUrl))
+
+        val playlistUrl = "https://www.youtube.com/playlist?list=PLrAXtmErZgOdP_8GztsuKi9upL79By424"
+        assertEquals("PLrAXtmErZgOdP_8GztsuKi9upL79By424", com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractPlaylistId(playlistUrl))
+    }
+
+    @Test
+    fun testYouTubeMediaItemNoSilentFallback() = runTest {
+        val ytTrack = com.sprinthon.focusclock.domain.model.FocusTrack(
+            id = "yt_test",
+            title = "Test YouTube Track",
+            artist = "Test Artist",
+            uri = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            isBuiltIn = false,
+            isYouTube = true
+        )
+        // In offline unit test environment, stream resolution throws YouTubeStreamResolutionException
+        // and NEVER falls back silently to ambient audio or deep_focus.
+        var caughtException = false
+        try {
+            FocusAudioCatalog.createMediaItem(application, ytTrack)
+        } catch (e: com.sprinthon.focusclock.playback.YouTubeStreamResolutionException) {
+            caughtException = true
+            assertTrue(e.message?.contains("Unable to resolve audio stream") == true)
+        }
+        assertTrue("Expected YouTubeStreamResolutionException on unresolved stream", caughtException)
+
+        // createMediaItemOrNull safely returns null without returning a fallback track
+        val nullItem = FocusAudioCatalog.createMediaItemOrNull(application, ytTrack)
+        org.junit.Assert.assertNull(nullItem)
     }
 
     @Test

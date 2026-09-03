@@ -137,7 +137,7 @@ fun AboutScreen(
             )
 
             Text(
-                text = "Version 1.6.0 · Release 6",
+                text = "Version ${com.sprinthon.focusclock.BuildConfig.VERSION_NAME} · Release ${com.sprinthon.focusclock.BuildConfig.VERSION_CODE}",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = 12.sp
                 ),

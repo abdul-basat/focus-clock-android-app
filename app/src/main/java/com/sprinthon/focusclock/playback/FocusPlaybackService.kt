@@ -13,7 +13,10 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.sprinthon.focusclock.MainActivity
@@ -48,12 +51,48 @@ class FocusPlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("com.google.android.youtube/19.29.35 (Linux; U; Android 11; Pixel 5)")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(15000)
+
+        val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(dataSourceFactory)
+
         val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build().apply {
                 repeatMode = Player.REPEAT_MODE_ALL
+                addListener(object : Player.Listener {
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        var httpCode: Int? = null
+                        var cause: Throwable? = error.cause
+                        while (cause != null) {
+                            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                                httpCode = cause.responseCode
+                                break
+                            }
+                            cause = cause.cause
+                        }
+                        android.util.Log.e("FocusPlaybackService", "[DIAGNOSTIC SERVICE ERROR] ExoPlayer error: code=${error.errorCode}, name=${error.errorCodeName}, cause=${error.cause?.javaClass?.simpleName}, httpCode=$httpCode, message=${error.message}")
+                    }
+
+                    override fun onPlaybackStateChanged(state: Int) {
+                        val stateStr = when(state) {
+                            Player.STATE_IDLE -> "IDLE"
+                            Player.STATE_BUFFERING -> "BUFFERING"
+                            Player.STATE_READY -> "READY"
+                            Player.STATE_ENDED -> "ENDED"
+                            else -> "UNKNOWN($state)"
+                        }
+                        android.util.Log.d("FocusPlaybackService", "[DIAGNOSTIC SERVICE STATE] state=$stateStr, playWhenReady=${this@apply.playWhenReady}")
+                    }
+                })
             }
 
         exoPlayer = player

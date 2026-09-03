@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
@@ -58,6 +60,7 @@ fun HomeScreen(
     onStartFocus: () -> Unit,
     onOpenStartConfig: () -> Unit,
     onOpenClockCanvas: () -> Unit,
+    onOpenLiveWallpaper: () -> Unit = {},
     onOpenAudio: () -> Unit = {},
     onOpenProfileSelector: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -96,19 +99,19 @@ fun HomeScreen(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(DarkElevatedSurface.copy(alpha = 0.7f))
-                    .clickable(onClick = onOpenClockCanvas)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .testTag("open_clock_canvas_button")
+                    .clickable(onClick = onOpenLiveWallpaper)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .testTag("open_live_wallpaper_button")
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.Palette,
-                    contentDescription = "Clock & Canvas",
+                    imageVector = Icons.Default.Wallpaper,
+                    contentDescription = "Live Wallpaper Studio",
                     tint = FocusAmber,
                     modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = preferences.clockStyle.displayName,
+                    text = "Wallpaper",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -176,7 +179,9 @@ fun HomeScreen(
                         style = preferences.clockStyle,
                         timeData = timeData,
                         clockFont = preferences.clockFont,
-                        scale = 1.0f,
+                        scale = preferences.clockScale.coerceIn(0.75f, 1.60f),
+                        analogNumeralSize = preferences.analogNumeralSize,
+                        analogNumeralScale = preferences.analogNumeralScale,
                         showDate = preferences.showDate,
                         showDayOfWeek = preferences.showDayOfWeek,
                         isLandscape = true
@@ -226,7 +231,9 @@ fun HomeScreen(
                         style = preferences.clockStyle,
                         timeData = timeData,
                         clockFont = preferences.clockFont,
-                        scale = 1.0f,
+                        scale = preferences.clockScale.coerceIn(0.75f, 1.60f),
+                        analogNumeralSize = preferences.analogNumeralSize,
+                        analogNumeralScale = preferences.analogNumeralScale,
                         showDate = preferences.showDate,
                         showDayOfWeek = preferences.showDayOfWeek,
                         isLandscape = false
@@ -238,6 +245,7 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .widthIn(max = 500.dp)
                         .padding(horizontal = 16.dp)
                 ) {
                     SessionSummaryBadge(

@@ -10,11 +10,18 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.sprinthon.focusclock.domain.model.AnalogNumeralOrientation
 import com.sprinthon.focusclock.domain.model.BackgroundType
+import com.sprinthon.focusclock.domain.model.ClockAlignment
+import com.sprinthon.focusclock.domain.model.ClockStyle
 import com.sprinthon.focusclock.domain.model.FocusPreferences
 import com.sprinthon.focusclock.domain.model.SlideshowInterval
 import com.sprinthon.focusclock.domain.model.SlideshowTransition
 import com.sprinthon.focusclock.domain.model.TimerDisplayMode
+import com.sprinthon.focusclock.domain.model.WallpaperBackgroundType
+import com.sprinthon.focusclock.domain.model.WallpaperClockPosition
+import com.sprinthon.focusclock.domain.model.WallpaperConfig
+import com.sprinthon.focusclock.ui.clock.ClockFont
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -25,6 +32,9 @@ class FocusPreferencesRepository(private val context: Context) {
     private object PreferencesKeys {
         val CLOCK_STYLE = stringPreferencesKey("clock_style")
         val CLOCK_FONT = stringPreferencesKey("clock_font")
+        val CLOCK_SCALE = floatPreferencesKey("clock_scale")
+        val ANALOG_NUMERAL_SIZE = stringPreferencesKey("analog_numeral_size")
+        val ANALOG_NUMERAL_SCALE = floatPreferencesKey("analog_numeral_scale")
         val TIME_FORMAT_24H = booleanPreferencesKey("time_format_24h")
         val SHOW_DATE = booleanPreferencesKey("show_date")
         val SHOW_DAY_OF_WEEK = booleanPreferencesKey("show_day_of_week")
@@ -55,13 +65,43 @@ class FocusPreferencesRepository(private val context: Context) {
         val BATTERY_SAVER_ENABLED = booleanPreferencesKey("battery_saver_enabled")
         val NOTIFY_ON_COMPLETION = booleanPreferencesKey("notify_on_completion")
         val SOUND_ON_COMPLETION = booleanPreferencesKey("sound_on_completion")
+        val FAVORITE_TRACK_IDS = stringPreferencesKey("favorite_track_ids")
+        val ACTIVE_COLLECTION_ID = stringPreferencesKey("active_collection_id")
+        val COLLECTION_PLAYBACK_MODE = stringPreferencesKey("collection_playback_mode")
+        val AUDIO_SOURCE_TYPE = stringPreferencesKey("audio_source_type")
         val CUSTOM_PROFILES_JSON = stringPreferencesKey("custom_profiles_json")
         val CUSTOM_TRACKS_JSON = stringPreferencesKey("custom_tracks_json")
+        val TRACK_COLLECTIONS_JSON = stringPreferencesKey("track_collections_json")
+
+        // Wallpaper Keys
+        val WALLPAPER_CLOCK_STYLE = stringPreferencesKey("wallpaper_clock_style")
+        val WALLPAPER_CLOCK_FONT = stringPreferencesKey("wallpaper_clock_font")
+        val WALLPAPER_CLOCK_COLOR = longPreferencesKey("wallpaper_clock_color")
+        val WALLPAPER_X_PERCENT = floatPreferencesKey("wallpaper_x_percent")
+        val WALLPAPER_Y_PERCENT = floatPreferencesKey("wallpaper_y_percent")
+        val WALLPAPER_CLOCK_SCALE = floatPreferencesKey("wallpaper_clock_scale")
+        val WALLPAPER_ALIGNMENT = stringPreferencesKey("wallpaper_alignment")
+        val WALLPAPER_ANALOG_ORIENTATION = stringPreferencesKey("wallpaper_analog_orientation")
+        val WALLPAPER_ANALOG_NUMERAL_SIZE = stringPreferencesKey("wallpaper_analog_numeral_size")
+        val WALLPAPER_ANALOG_NUMERAL_SCALE = floatPreferencesKey("wallpaper_analog_numeral_scale")
+        val WALLPAPER_BACKGROUND_TYPE = stringPreferencesKey("wallpaper_background_type")
+        val WALLPAPER_BACKGROUND_COLOR = longPreferencesKey("wallpaper_background_color")
+        val WALLPAPER_BACKGROUND_IMAGE_URI = stringPreferencesKey("wallpaper_background_image_uri")
+        val WALLPAPER_SCRIM_OPACITY = floatPreferencesKey("wallpaper_scrim_opacity")
+        val WALLPAPER_BLUR_RADIUS = intPreferencesKey("wallpaper_blur_radius")
+        val WALLPAPER_SHOW_DATE = booleanPreferencesKey("wallpaper_show_date")
+        val WALLPAPER_SHOW_SECONDS = booleanPreferencesKey("wallpaper_show_seconds")
+        val WALLPAPER_SHOW_MOTTO = booleanPreferencesKey("wallpaper_show_motto")
+        val WALLPAPER_CUSTOM_MOTTO = stringPreferencesKey("wallpaper_custom_motto")
+        val WALLPAPER_SHOW_FOCUS_STREAK = booleanPreferencesKey("wallpaper_show_focus_streak")
+        val WALLPAPER_TIME_FORMAT_24H = booleanPreferencesKey("wallpaper_time_format_24h")
     }
 
     val preferencesFlow: Flow<FocusPreferences> = context.focusDataStore.data.map { preferences ->
         val urisRaw = preferences[PreferencesKeys.SLIDESHOW_IMAGE_URIS] ?: ""
         val urisList = if (urisRaw.isBlank()) emptyList() else urisRaw.split("|||")
+        val favRaw = preferences[PreferencesKeys.FAVORITE_TRACK_IDS] ?: ""
+        val favSet = if (favRaw.isBlank()) emptySet() else favRaw.split("|||").toSet()
 
         FocusPreferences(
             clockStyle = preferences[PreferencesKeys.CLOCK_STYLE]?.let {
@@ -70,6 +110,11 @@ class FocusPreferencesRepository(private val context: Context) {
             clockFont = preferences[PreferencesKeys.CLOCK_FONT]?.let {
                 try { com.sprinthon.focusclock.ui.clock.ClockFont.valueOf(it) } catch (e: Exception) { com.sprinthon.focusclock.ui.clock.ClockFont.BEBAS_NEUE }
             } ?: com.sprinthon.focusclock.ui.clock.ClockFont.BEBAS_NEUE,
+            clockScale = preferences[PreferencesKeys.CLOCK_SCALE] ?: 1.15f,
+            analogNumeralSize = preferences[PreferencesKeys.ANALOG_NUMERAL_SIZE]?.let {
+                try { com.sprinthon.focusclock.domain.model.AnalogNumeralSize.valueOf(it) } catch (e: Exception) { com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE }
+            } ?: com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE,
+            analogNumeralScale = preferences[PreferencesKeys.ANALOG_NUMERAL_SCALE] ?: 1.35f,
             timeFormat24Hour = preferences[PreferencesKeys.TIME_FORMAT_24H] ?: true,
             showDate = preferences[PreferencesKeys.SHOW_DATE] ?: true,
             showDayOfWeek = preferences[PreferencesKeys.SHOW_DAY_OF_WEEK] ?: true,
@@ -109,8 +154,26 @@ class FocusPreferencesRepository(private val context: Context) {
             immersiveFullscreenEnabled = preferences[PreferencesKeys.IMMERSIVE_FULLSCREEN_ENABLED] ?: false,
             batterySaverEnabled = preferences[PreferencesKeys.BATTERY_SAVER_ENABLED] ?: false,
             notifyOnCompletion = preferences[PreferencesKeys.NOTIFY_ON_COMPLETION] ?: true,
-            soundOnCompletion = preferences[PreferencesKeys.SOUND_ON_COMPLETION] ?: true
+            soundOnCompletion = preferences[PreferencesKeys.SOUND_ON_COMPLETION] ?: true,
+            favoriteTrackIds = favSet,
+            activeCollectionId = preferences[PreferencesKeys.ACTIVE_COLLECTION_ID],
+            collectionPlaybackMode = preferences[PreferencesKeys.COLLECTION_PLAYBACK_MODE]?.let {
+                try { com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.valueOf(it) } catch (e: Exception) { com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION }
+            } ?: com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION,
+            audioSourceType = preferences[PreferencesKeys.AUDIO_SOURCE_TYPE]?.let {
+                try { com.sprinthon.focusclock.domain.model.AudioSourceType.valueOf(it) } catch (e: Exception) { com.sprinthon.focusclock.domain.model.AudioSourceType.AMBIENT_SOUNDS }
+            } ?: com.sprinthon.focusclock.domain.model.AudioSourceType.AMBIENT_SOUNDS
         )
+    }
+
+    val trackCollectionsFlow: Flow<List<com.sprinthon.focusclock.domain.model.TrackCollection>> = context.focusDataStore.data.map { preferences ->
+        val rawJson = preferences[PreferencesKeys.TRACK_COLLECTIONS_JSON] ?: "[]"
+        deserializeTrackCollections(rawJson)
+    }
+
+    val favoriteTrackIdsFlow: Flow<Set<String>> = context.focusDataStore.data.map { preferences ->
+        val favRaw = preferences[PreferencesKeys.FAVORITE_TRACK_IDS] ?: ""
+        if (favRaw.isBlank()) emptySet() else favRaw.split("|||").toSet()
     }
 
     val customProfilesFlow: Flow<List<com.sprinthon.focusclock.domain.model.FocusProfile>> = context.focusDataStore.data.map { preferences ->
@@ -123,6 +186,177 @@ class FocusPreferencesRepository(private val context: Context) {
     val customTracksFlow: Flow<List<com.sprinthon.focusclock.domain.model.FocusTrack>> = context.focusDataStore.data.map { preferences ->
         val rawJson = preferences[PreferencesKeys.CUSTOM_TRACKS_JSON] ?: "[]"
         deserializeCustomTracks(rawJson)
+    }
+
+    val wallpaperConfigFlow: Flow<WallpaperConfig> = context.focusDataStore.data.map { preferences ->
+        val alignment = preferences[PreferencesKeys.WALLPAPER_ALIGNMENT]?.let {
+            try { ClockAlignment.valueOf(it) } catch (e: Exception) { ClockAlignment.TOP_CENTER }
+        } ?: ClockAlignment.TOP_CENTER
+
+        val position = WallpaperClockPosition(
+            xPercent = preferences[PreferencesKeys.WALLPAPER_X_PERCENT] ?: 0.0f,
+            yPercent = preferences[PreferencesKeys.WALLPAPER_Y_PERCENT] ?: -0.35f,
+            scale = preferences[PreferencesKeys.WALLPAPER_CLOCK_SCALE] ?: 1.0f,
+            alignment = alignment
+        )
+
+        val clockStyle = preferences[PreferencesKeys.WALLPAPER_CLOCK_STYLE]?.let {
+            try { ClockStyle.valueOf(it) } catch (e: Exception) { ClockStyle.ANALOG }
+        } ?: ClockStyle.ANALOG
+
+        val clockFont = preferences[PreferencesKeys.WALLPAPER_CLOCK_FONT]?.let {
+            try { ClockFont.valueOf(it) } catch (e: Exception) { ClockFont.BEBAS_NEUE }
+        } ?: ClockFont.BEBAS_NEUE
+
+        val numeralOrientation = preferences[PreferencesKeys.WALLPAPER_ANALOG_ORIENTATION]?.let {
+            try { AnalogNumeralOrientation.valueOf(it) } catch (e: Exception) { AnalogNumeralOrientation.HORIZONTAL_UPRIGHT }
+        } ?: AnalogNumeralOrientation.HORIZONTAL_UPRIGHT
+
+        val numeralSize = preferences[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SIZE]?.let {
+            try { com.sprinthon.focusclock.domain.model.AnalogNumeralSize.valueOf(it) } catch (e: Exception) { com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE }
+        } ?: com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE
+
+        val numeralScale = preferences[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SCALE] ?: 1.35f
+
+        val bgType = preferences[PreferencesKeys.WALLPAPER_BACKGROUND_TYPE]?.let {
+            try { WallpaperBackgroundType.valueOf(it) } catch (e: Exception) { WallpaperBackgroundType.SOLID_COLOR }
+        } ?: WallpaperBackgroundType.SOLID_COLOR
+
+        WallpaperConfig(
+            clockStyle = clockStyle,
+            clockFont = clockFont,
+            clockColorHex = preferences[PreferencesKeys.WALLPAPER_CLOCK_COLOR] ?: 0xFFFFFFFFL,
+            position = position,
+            analogNumeralOrientation = numeralOrientation,
+            analogNumeralSize = numeralSize,
+            analogNumeralScale = numeralScale,
+            backgroundType = bgType,
+            backgroundColorHex = preferences[PreferencesKeys.WALLPAPER_BACKGROUND_COLOR] ?: 0xFF000000L,
+            backgroundImageUri = preferences[PreferencesKeys.WALLPAPER_BACKGROUND_IMAGE_URI],
+            scrimOpacity = preferences[PreferencesKeys.WALLPAPER_SCRIM_OPACITY] ?: 0.25f,
+            blurRadius = preferences[PreferencesKeys.WALLPAPER_BLUR_RADIUS] ?: 0,
+            showDate = preferences[PreferencesKeys.WALLPAPER_SHOW_DATE] ?: true,
+            showSeconds = preferences[PreferencesKeys.WALLPAPER_SHOW_SECONDS] ?: true,
+            showMotto = preferences[PreferencesKeys.WALLPAPER_SHOW_MOTTO] ?: false,
+            customMotto = preferences[PreferencesKeys.WALLPAPER_CUSTOM_MOTTO] ?: "Stay in the Flow",
+            showFocusStreak = preferences[PreferencesKeys.WALLPAPER_SHOW_FOCUS_STREAK] ?: false,
+            timeFormat24Hour = preferences[PreferencesKeys.WALLPAPER_TIME_FORMAT_24H] ?: true
+        )
+    }
+
+    suspend fun updateWallpaperConfig(config: WallpaperConfig) {
+        context.focusDataStore.edit { prefs ->
+            prefs[PreferencesKeys.WALLPAPER_CLOCK_STYLE] = config.clockStyle.name
+            prefs[PreferencesKeys.WALLPAPER_CLOCK_FONT] = config.clockFont.name
+            prefs[PreferencesKeys.WALLPAPER_CLOCK_COLOR] = config.clockColorHex
+            prefs[PreferencesKeys.WALLPAPER_X_PERCENT] = config.position.xPercent
+            prefs[PreferencesKeys.WALLPAPER_Y_PERCENT] = config.position.yPercent
+            prefs[PreferencesKeys.WALLPAPER_CLOCK_SCALE] = config.position.scale
+            prefs[PreferencesKeys.WALLPAPER_ALIGNMENT] = config.position.alignment.name
+            prefs[PreferencesKeys.WALLPAPER_ANALOG_ORIENTATION] = config.analogNumeralOrientation.name
+            prefs[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SIZE] = config.analogNumeralSize.name
+            prefs[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SCALE] = config.analogNumeralScale
+            prefs[PreferencesKeys.WALLPAPER_BACKGROUND_TYPE] = config.backgroundType.name
+            prefs[PreferencesKeys.WALLPAPER_BACKGROUND_COLOR] = config.backgroundColorHex
+            if (config.backgroundImageUri != null) {
+                prefs[PreferencesKeys.WALLPAPER_BACKGROUND_IMAGE_URI] = config.backgroundImageUri
+            } else {
+                prefs.remove(PreferencesKeys.WALLPAPER_BACKGROUND_IMAGE_URI)
+            }
+            prefs[PreferencesKeys.WALLPAPER_SCRIM_OPACITY] = config.scrimOpacity
+            prefs[PreferencesKeys.WALLPAPER_BLUR_RADIUS] = config.blurRadius
+            prefs[PreferencesKeys.WALLPAPER_SHOW_DATE] = config.showDate
+            prefs[PreferencesKeys.WALLPAPER_SHOW_SECONDS] = config.showSeconds
+            prefs[PreferencesKeys.WALLPAPER_SHOW_MOTTO] = config.showMotto
+            prefs[PreferencesKeys.WALLPAPER_CUSTOM_MOTTO] = config.customMotto
+            prefs[PreferencesKeys.WALLPAPER_SHOW_FOCUS_STREAK] = config.showFocusStreak
+            prefs[PreferencesKeys.WALLPAPER_TIME_FORMAT_24H] = config.timeFormat24Hour
+        }
+    }
+
+    suspend fun updateWallpaperClockPosition(position: WallpaperClockPosition) {
+        context.focusDataStore.edit { prefs ->
+            prefs[PreferencesKeys.WALLPAPER_X_PERCENT] = position.xPercent
+            prefs[PreferencesKeys.WALLPAPER_Y_PERCENT] = position.yPercent
+            prefs[PreferencesKeys.WALLPAPER_CLOCK_SCALE] = position.scale
+            prefs[PreferencesKeys.WALLPAPER_ALIGNMENT] = position.alignment.name
+        }
+    }
+
+    suspend fun updateWallpaperClockStyle(style: ClockStyle) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_CLOCK_STYLE] = style.name }
+    }
+
+    suspend fun updateWallpaperClockFont(font: ClockFont) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_CLOCK_FONT] = font.name }
+    }
+
+    suspend fun updateWallpaperClockColor(colorHex: Long) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_CLOCK_COLOR] = colorHex }
+    }
+
+    suspend fun updateWallpaperAnalogOrientation(orientation: AnalogNumeralOrientation) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_ANALOG_ORIENTATION] = orientation.name }
+    }
+
+    suspend fun updateWallpaperAnalogNumeralSize(size: com.sprinthon.focusclock.domain.model.AnalogNumeralSize) {
+        context.focusDataStore.edit {
+            it[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SIZE] = size.name
+            it[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SCALE] = size.scale
+        }
+    }
+
+    suspend fun updateWallpaperAnalogNumeralScale(scale: Float) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_ANALOG_NUMERAL_SCALE] = scale }
+    }
+
+    suspend fun updateWallpaperBackgroundType(type: WallpaperBackgroundType) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_BACKGROUND_TYPE] = type.name }
+    }
+
+    suspend fun updateWallpaperBackgroundColor(colorHex: Long) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_BACKGROUND_COLOR] = colorHex }
+    }
+
+    suspend fun updateWallpaperBackgroundImageUri(uri: String?) {
+        context.focusDataStore.edit { prefs ->
+            if (uri != null) {
+                prefs[PreferencesKeys.WALLPAPER_BACKGROUND_IMAGE_URI] = uri
+            } else {
+                prefs.remove(PreferencesKeys.WALLPAPER_BACKGROUND_IMAGE_URI)
+            }
+        }
+    }
+
+    suspend fun updateWallpaperScrimOpacity(opacity: Float) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_SCRIM_OPACITY] = opacity }
+    }
+
+    suspend fun updateWallpaperBlurRadius(radius: Int) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_BLUR_RADIUS] = radius }
+    }
+
+    suspend fun updateWallpaperShowDate(show: Boolean) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_SHOW_DATE] = show }
+    }
+
+    suspend fun updateWallpaperShowSeconds(show: Boolean) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_SHOW_SECONDS] = show }
+    }
+
+    suspend fun updateWallpaperMotto(show: Boolean, motto: String) {
+        context.focusDataStore.edit { prefs ->
+            prefs[PreferencesKeys.WALLPAPER_SHOW_MOTTO] = show
+            prefs[PreferencesKeys.WALLPAPER_CUSTOM_MOTTO] = motto
+        }
+    }
+
+    suspend fun updateWallpaperShowStreak(show: Boolean) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_SHOW_FOCUS_STREAK] = show }
+    }
+
+    suspend fun updateWallpaperTimeFormat(is24Hour: Boolean) {
+        context.focusDataStore.edit { it[PreferencesKeys.WALLPAPER_TIME_FORMAT_24H] = is24Hour }
     }
 
     suspend fun saveCustomTrack(track: com.sprinthon.focusclock.domain.model.FocusTrack) {
@@ -153,6 +387,21 @@ class FocusPreferencesRepository(private val context: Context) {
 
     suspend fun updateClockFont(font: com.sprinthon.focusclock.ui.clock.ClockFont) {
         context.focusDataStore.edit { it[PreferencesKeys.CLOCK_FONT] = font.name }
+    }
+
+    suspend fun updateClockScale(scale: Float) {
+        context.focusDataStore.edit { it[PreferencesKeys.CLOCK_SCALE] = scale }
+    }
+
+    suspend fun updateAnalogNumeralSize(size: com.sprinthon.focusclock.domain.model.AnalogNumeralSize) {
+        context.focusDataStore.edit {
+            it[PreferencesKeys.ANALOG_NUMERAL_SIZE] = size.name
+            it[PreferencesKeys.ANALOG_NUMERAL_SCALE] = size.scale
+        }
+    }
+
+    suspend fun updateAnalogNumeralScale(scale: Float) {
+        context.focusDataStore.edit { it[PreferencesKeys.ANALOG_NUMERAL_SCALE] = scale }
     }
 
     suspend fun updateTimeFormat(is24Hour: Boolean) {
@@ -330,6 +579,10 @@ class FocusPreferencesRepository(private val context: Context) {
 
 
 
+    suspend fun updateAudioSourceType(type: com.sprinthon.focusclock.domain.model.AudioSourceType) {
+        context.focusDataStore.edit { it[PreferencesKeys.AUDIO_SOURCE_TYPE] = type.name }
+    }
+
     suspend fun resetAllSettingsToDefault() {
         context.focusDataStore.edit { it.clear() }
     }
@@ -398,6 +651,114 @@ class FocusPreferencesRepository(private val context: Context) {
     }
 
 
+
+    suspend fun saveTrackCollection(collection: com.sprinthon.focusclock.domain.model.TrackCollection) {
+        context.focusDataStore.edit { prefs ->
+            val rawJson = prefs[PreferencesKeys.TRACK_COLLECTIONS_JSON] ?: "[]"
+            val currentList = deserializeTrackCollections(rawJson).toMutableList()
+            val existingIndex = currentList.indexOfFirst { it.id == collection.id }
+            if (existingIndex >= 0) {
+                currentList[existingIndex] = collection
+            } else {
+                currentList.add(collection)
+            }
+            prefs[PreferencesKeys.TRACK_COLLECTIONS_JSON] = serializeTrackCollections(currentList)
+        }
+    }
+
+    suspend fun deleteTrackCollection(collectionId: String) {
+        context.focusDataStore.edit { prefs ->
+            val rawJson = prefs[PreferencesKeys.TRACK_COLLECTIONS_JSON] ?: "[]"
+            val currentList = deserializeTrackCollections(rawJson).filter { it.id != collectionId }
+            prefs[PreferencesKeys.TRACK_COLLECTIONS_JSON] = serializeTrackCollections(currentList)
+            if (prefs[PreferencesKeys.ACTIVE_COLLECTION_ID] == collectionId) {
+                prefs.remove(PreferencesKeys.ACTIVE_COLLECTION_ID)
+            }
+        }
+    }
+
+    suspend fun toggleFavoriteTrack(trackId: String) {
+        context.focusDataStore.edit { prefs ->
+            val rawFav = prefs[PreferencesKeys.FAVORITE_TRACK_IDS] ?: ""
+            val favSet = if (rawFav.isBlank()) mutableSetOf() else rawFav.split("|||").toMutableSet()
+            if (favSet.contains(trackId)) {
+                favSet.remove(trackId)
+            } else {
+                favSet.add(trackId)
+            }
+            prefs[PreferencesKeys.FAVORITE_TRACK_IDS] = favSet.joinToString("|||")
+        }
+    }
+
+    suspend fun updateActiveCollectionId(collectionId: String?) {
+        context.focusDataStore.edit { prefs ->
+            if (collectionId != null) {
+                prefs[PreferencesKeys.ACTIVE_COLLECTION_ID] = collectionId
+            } else {
+                prefs.remove(PreferencesKeys.ACTIVE_COLLECTION_ID)
+            }
+        }
+    }
+
+    suspend fun updateCollectionPlaybackMode(mode: com.sprinthon.focusclock.domain.model.CollectionPlaybackMode) {
+        context.focusDataStore.edit { prefs ->
+            prefs[PreferencesKeys.COLLECTION_PLAYBACK_MODE] = mode.name
+        }
+    }
+
+    private fun serializeTrackCollections(collections: List<com.sprinthon.focusclock.domain.model.TrackCollection>): String {
+        val array = org.json.JSONArray()
+        for (c in collections) {
+            val obj = org.json.JSONObject()
+            obj.put("id", c.id)
+            obj.put("name", c.name)
+            obj.put("description", c.description)
+            val trackArray = org.json.JSONArray()
+            c.trackIds.forEach { trackArray.put(it) }
+            obj.put("trackIds", trackArray)
+            obj.put("playbackMode", c.playbackMode.name)
+            obj.put("accentColorHex", c.accentColorHex)
+            obj.put("iconName", c.iconName)
+            obj.put("createdAt", c.createdAt)
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    private fun deserializeTrackCollections(rawJson: String): List<com.sprinthon.focusclock.domain.model.TrackCollection> {
+        val list = mutableListOf<com.sprinthon.focusclock.domain.model.TrackCollection>()
+        try {
+            val array = org.json.JSONArray(rawJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val trackIdsList = mutableListOf<String>()
+                val trackArray = obj.optJSONArray("trackIds")
+                if (trackArray != null) {
+                    for (j in 0 until trackArray.length()) {
+                        trackIdsList.add(trackArray.getString(j))
+                    }
+                }
+                val collection = com.sprinthon.focusclock.domain.model.TrackCollection(
+                    id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                    name = obj.optString("name", "My Collection"),
+                    description = obj.optString("description", ""),
+                    trackIds = trackIdsList,
+                    playbackMode = try {
+                        com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.valueOf(obj.optString("playbackMode", "LOOP_COLLECTION"))
+                    } catch (e: Exception) {
+                        com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION
+                    },
+                    accentColorHex = obj.optLong("accentColorHex", 0xFFF59E0B),
+                    iconName = obj.optString("iconName", "playlist"),
+                    createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                )
+                list.add(collection)
+            }
+        } catch (e: Exception) {
+            // Fail gracefully
+        }
+        return list
+    }
 
     private fun serializeCustomTracks(tracks: List<com.sprinthon.focusclock.domain.model.FocusTrack>): String {
         val array = org.json.JSONArray()

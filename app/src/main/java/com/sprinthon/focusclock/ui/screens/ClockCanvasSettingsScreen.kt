@@ -113,6 +113,7 @@ import com.sprinthon.focusclock.ui.theme.DarkCardSurface
 import com.sprinthon.focusclock.ui.theme.DarkElevatedSurface
 import com.sprinthon.focusclock.ui.theme.DarkOutline
 import com.sprinthon.focusclock.ui.theme.FocusAmber
+import com.sprinthon.focusclock.ui.theme.rememberCanvasContrastPalette
 
 enum class CustomizerTab(val title: String, val icon: ImageVector) {
     CLOCK_STYLE("Dial", Icons.Outlined.Schedule),
@@ -148,6 +149,9 @@ fun ClockCanvasSettingsScreen(
     onToggleShowDate: (Boolean) -> Unit,
     onToggleShowDayOfWeek: (Boolean) -> Unit,
     onSelectDateFormat: (DateFormatOption) -> Unit,
+    onSelectClockScale: (Float) -> Unit = {},
+    onSelectAnalogNumeralSize: (com.sprinthon.focusclock.domain.model.AnalogNumeralSize) -> Unit = {},
+    onSelectAnalogNumeralScale: (Float) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     initialTab: CustomizerTab = CustomizerTab.CLOCK_STYLE
@@ -250,6 +254,8 @@ fun ClockCanvasSettingsScreen(
             // ==========================================
             // 1. PINNED / STICKY LIVE SYNCHRONIZED HERO PREVIEW
             // ==========================================
+            val previewContrastPalette = rememberCanvasContrastPalette(preferences)
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -276,7 +282,7 @@ fun ClockCanvasSettingsScreen(
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        // Clock Layer (renders exact clock style, font, and date)
+                        // Clock Layer (renders exact clock style, font, date, and adaptive contrast)
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -287,13 +293,18 @@ fun ClockCanvasSettingsScreen(
                             ClockRenderer(
                                 style = preferences.clockStyle,
                                 timeData = timeData,
-                                primaryColor = Color.White,
-                                secondaryColor = Color(0xFF8E8E96),
-                                accentColor = FocusAmber,
+                                primaryColor = previewContrastPalette.primaryText,
+                                secondaryColor = previewContrastPalette.secondaryText,
+                                accentColor = previewContrastPalette.accentColor,
+                                cardBackground = previewContrastPalette.cardBackground,
+                                cardBorder = previewContrastPalette.cardBorder,
+                                cardDivider = previewContrastPalette.cardDivider,
                                 clockFont = preferences.clockFont,
                                 showDate = preferences.showDate,
                                 showDayOfWeek = preferences.showDayOfWeek,
-                                scale = 0.70f,
+                                scale = 0.70f * preferences.clockScale,
+                                analogNumeralSize = preferences.analogNumeralSize,
+                                analogNumeralScale = preferences.analogNumeralScale,
                                 isLandscape = false
                             )
                         }
@@ -402,7 +413,13 @@ fun ClockCanvasSettingsScreen(
                                     selectedStyle = preferences.clockStyle,
                                     timeData = timeData,
                                     clockFont = preferences.clockFont,
-                                    onSelectClockStyle = onSelectClockStyle
+                                    clockScale = preferences.clockScale,
+                                    analogNumeralSize = preferences.analogNumeralSize,
+                                    analogNumeralScale = preferences.analogNumeralScale,
+                                    onSelectClockStyle = onSelectClockStyle,
+                                    onSelectClockScale = onSelectClockScale,
+                                    onSelectAnalogNumeralSize = onSelectAnalogNumeralSize,
+                                    onSelectAnalogNumeralScale = onSelectAnalogNumeralScale
                                 )
                             }
                             CustomizerTab.TYPOGRAPHY -> {
@@ -478,9 +495,15 @@ private fun ClockStyleTabContent(
     selectedStyle: ClockStyle,
     timeData: com.sprinthon.focusclock.ui.clock.ClockTimeData,
     clockFont: ClockFont,
-    onSelectClockStyle: (ClockStyle) -> Unit
+    clockScale: Float = 1.0f,
+    analogNumeralSize: com.sprinthon.focusclock.domain.model.AnalogNumeralSize = com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE,
+    analogNumeralScale: Float = 1.35f,
+    onSelectClockStyle: (ClockStyle) -> Unit,
+    onSelectClockScale: (Float) -> Unit = {},
+    onSelectAnalogNumeralSize: (com.sprinthon.focusclock.domain.model.AnalogNumeralSize) -> Unit = {},
+    onSelectAnalogNumeralScale: (Float) -> Unit = {}
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SettingsSectionHeader(title = "Choose Clock Dial Style")
 
         ClockStyle.entries.chunked(2).forEach { rowStyles ->
@@ -526,7 +549,9 @@ private fun ClockStyleTabContent(
                                     clockFont = clockFont,
                                     showDate = false,
                                     showDayOfWeek = false,
-                                    scale = 0.52f
+                                    scale = 0.52f,
+                                    analogNumeralSize = analogNumeralSize,
+                                    analogNumeralScale = analogNumeralScale
                                 )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -556,6 +581,165 @@ private fun ClockStyleTabContent(
                     }
                 }
             }
+        }
+
+        // ==========================================
+        // ANALOG NUMERAL SIZE & SCALE CONTROLS (When Analog active)
+        // ==========================================
+        if (selectedStyle == ClockStyle.ANALOG) {
+            SettingsSectionHeader(title = "Analog Dial Numeral Size")
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(DarkCardSurface)
+                    .border(0.5.dp, DarkOutline, RoundedCornerShape(16.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 4 Numeral Size Option Cards in 2x2 Grid
+                com.sprinthon.focusclock.domain.model.AnalogNumeralSize.entries.chunked(2).forEach { rowSizes ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        rowSizes.forEach { sizeOption ->
+                            val isSizeSelected = analogNumeralSize == sizeOption
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSizeSelected) Color(0xFF241E15) else Color(0xFF16161A),
+                                border = BorderStroke(
+                                    if (isSizeSelected) 1.5.dp else 0.75.dp,
+                                    if (isSizeSelected) FocusAmber else Color(0xFF26262E)
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        onSelectAnalogNumeralSize(sizeOption)
+                                        onSelectAnalogNumeralScale(sizeOption.scale)
+                                    }
+                                    .testTag("numeral_size_${sizeOption.name.lowercase()}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSizeSelected) FocusAmber else Color(0xFF4A4A56))
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = sizeOption.displayName,
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = if (isSizeSelected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 13.sp
+                                            ),
+                                            color = if (isSizeSelected) FocusAmber else Color.White
+                                        )
+                                        Text(
+                                            text = "${(sizeOption.scale * 100).toInt()}% font",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fine-tune Numeral Scale Slider
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Numeral Scale Fine-Tuning",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = String.format("%.2fx", analogNumeralScale),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = FocusAmber,
+                            modifier = Modifier.testTag("analog_numeral_scale_label")
+                        )
+                    }
+                    Slider(
+                        value = analogNumeralScale,
+                        onValueChange = onSelectAnalogNumeralScale,
+                        valueRange = 0.80f..2.00f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = FocusAmber,
+                            activeTrackColor = FocusAmber,
+                            inactiveTrackColor = DarkElevatedSurface
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("slider_analog_numeral_scale")
+                    )
+                }
+            }
+        }
+
+        // ==========================================
+        // OVERALL CLOCK SCALE SLIDER (0.75x - 1.60x)
+        // ==========================================
+        SettingsSectionHeader(title = "Display Size & Scaling")
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(DarkCardSurface)
+                .border(0.5.dp, DarkOutline, RoundedCornerShape(16.dp))
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Hero Clock Scale",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.LightGray,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = String.format("%.2fx", clockScale),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = FocusAmber,
+                    modifier = Modifier.testTag("clock_scale_value_label")
+                )
+            }
+            Slider(
+                value = clockScale,
+                onValueChange = onSelectClockScale,
+                valueRange = 0.75f..1.60f,
+                colors = SliderDefaults.colors(
+                    thumbColor = FocusAmber,
+                    activeTrackColor = FocusAmber,
+                    inactiveTrackColor = DarkElevatedSurface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("slider_clock_scale_canvas")
+            )
+            Text(
+                text = "Adjust the primary clock footprint across Focus sessions and Home hero view.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray,
+                fontSize = 11.sp
+            )
         }
     }
 }

@@ -29,9 +29,10 @@ class SettingsHubTest {
     private lateinit var repository: FocusPreferencesRepository
 
     @Before
-    fun setUp() {
+    fun setUp() = runTest {
         context = ApplicationProvider.getApplicationContext()
         repository = FocusPreferencesRepository(context)
+        repository.resetAllSettingsToDefault()
     }
 
     @Test

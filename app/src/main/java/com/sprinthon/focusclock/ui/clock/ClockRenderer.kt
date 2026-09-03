@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.sprinthon.focusclock.domain.model.AnalogNumeralOrientation
 import com.sprinthon.focusclock.domain.model.ClockStyle
 import com.sprinthon.focusclock.ui.theme.FocusAmber
 
@@ -19,10 +20,17 @@ fun ClockRenderer(
     primaryColor: Color = MaterialTheme.colorScheme.onBackground,
     secondaryColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     accentColor: Color = FocusAmber,
+    numeralOrientation: AnalogNumeralOrientation = AnalogNumeralOrientation.HORIZONTAL_UPRIGHT,
+    showSeconds: Boolean = true,
+    cardBackground: Color? = null,
+    cardBorder: Color? = null,
+    cardDivider: Color? = null,
     clockFont: ClockFont = ClockFont.BEBAS_NEUE,
     showDate: Boolean = true,
     showDayOfWeek: Boolean = true,
     scale: Float = 1.0f,
+    analogNumeralSize: com.sprinthon.focusclock.domain.model.AnalogNumeralSize = com.sprinthon.focusclock.domain.model.AnalogNumeralSize.LARGE,
+    analogNumeralScale: Float = 1.35f,
     isLandscape: Boolean = false
 ) {
     Box(
@@ -49,6 +57,9 @@ fun ClockRenderer(
                     timeData = timeData,
                     primaryColor = primaryColor,
                     secondaryColor = secondaryColor,
+                    cardBackground = cardBackground,
+                    cardBorder = cardBorder,
+                    cardDivider = cardDivider,
                     clockFont = clockFont,
                     showDate = showDate,
                     showDayOfWeek = showDayOfWeek,
@@ -70,9 +81,14 @@ fun ClockRenderer(
                     primaryColor = primaryColor,
                     secondaryColor = secondaryColor,
                     accentColor = accentColor,
+                    numeralOrientation = numeralOrientation,
+                    showSeconds = showSeconds,
+                    clockFont = clockFont,
                     showDate = showDate,
                     showDayOfWeek = showDayOfWeek,
                     scale = scale,
+                    analogNumeralSize = analogNumeralSize,
+                    analogNumeralScale = analogNumeralScale,
                     isLandscape = isLandscape
                 )
             }

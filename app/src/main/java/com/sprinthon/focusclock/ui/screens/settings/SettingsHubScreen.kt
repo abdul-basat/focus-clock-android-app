@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -64,6 +65,7 @@ fun SettingsHubScreen(
     session: SessionSnapshot,
     onNavigateToFocusSettings: () -> Unit,
     onNavigateToClockSettings: () -> Unit,
+    onNavigateToLiveWallpaper: () -> Unit = {},
     onNavigateToBackgroundSettings: () -> Unit,
     onNavigateToAudioSettings: () -> Unit,
     onNavigateToGeneralSettings: () -> Unit,
@@ -187,6 +189,16 @@ fun SettingsHubScreen(
             SettingsSectionHeader(title = "Visual & Audio Customization")
             SettingsCard {
                 SettingsNavigationRow(
+                    title = "Live Wallpaper Studio",
+                    subtitle = "Interactive Drag, Home & Lock Screen overlays, Custom Motto & Blur",
+                    icon = Icons.Default.Wallpaper,
+                    iconTint = FocusAmber,
+                    badgeValue = "Live Wallpaper",
+                    testTag = "settings_live_wallpaper_row",
+                    onClick = onNavigateToLiveWallpaper
+                )
+                HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+                SettingsNavigationRow(
                     title = "Clock & Canvas Studio",
                     subtitle = "Dial styles, typography fonts, backgrounds, and dimming",
                     icon = Icons.Default.Palette,
@@ -234,7 +246,7 @@ fun SettingsHubScreen(
             SettingsCard {
                 SettingsNavigationRow(
                     title = "About Focus Clock",
-                    subtitle = "Version 1.6.0 · Offline & 100% Private",
+                    subtitle = "Version ${com.sprinthon.focusclock.BuildConfig.VERSION_NAME} · Offline & 100% Private",
                     icon = Icons.Default.Info,
                     iconTint = Color(0xFF90A4AE),
                     testTag = "settings_about_row",

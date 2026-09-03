@@ -69,10 +69,12 @@ import com.sprinthon.focusclock.ui.components.FocusBackground
 import com.sprinthon.focusclock.ui.components.FocusPlayerArea
 import com.sprinthon.focusclock.ui.components.FocusTimerWidget
 import com.sprinthon.focusclock.playback.PlayerUiState
+import com.sprinthon.focusclock.ui.theme.CanvasContrastPalette
 import com.sprinthon.focusclock.ui.theme.DarkElevatedSurface
 import com.sprinthon.focusclock.ui.theme.DarkOutline
 import com.sprinthon.focusclock.ui.theme.FocusAmber
 import com.sprinthon.focusclock.ui.theme.FocusCompleted
+import com.sprinthon.focusclock.ui.theme.rememberCanvasContrastPalette
 
 /**
  * Modern, distraction-free Active Focus Screen.
@@ -94,6 +96,10 @@ fun ActiveFocusScreen(
     onDismissExitDialog: () -> Unit,
     onFinishCompletedSession: () -> Unit,
     modifier: Modifier = Modifier,
+    externalMediaState: com.sprinthon.focusclock.domain.model.ExternalMediaSessionState? = null,
+    onLaunchMusicApp: ((String) -> Unit)? = null,
+    onOpenPermissionSettings: (() -> Unit)? = null,
+    onTransferToFocus: (() -> Unit)? = null,
     onStartAgain: () -> Unit = {},
     onPlayPauseToggle: () -> Unit,
     onStopPlayer: () -> Unit,
@@ -108,10 +114,11 @@ fun ActiveFocusScreen(
 
     val isPaused = session.state == SessionState.PAUSED
     val isCompleted = session.state == SessionState.COMPLETED
+    val contrastPalette = rememberCanvasContrastPalette(preferences)
 
-    // Keep Screen Awake, enforce high-contrast status bar icons, and battery saver brightness management
+    // Keep Screen Awake, enforce dynamic high-contrast status bar icons, and battery saver brightness management
     val view = LocalView.current
-    DisposableEffect(preferences.keepScreenAwake, preferences.batterySaverEnabled, view) {
+    DisposableEffect(preferences.keepScreenAwake, preferences.batterySaverEnabled, contrastPalette.statusBarsDarkIcons, view) {
         val activity = context.findActivity()
         var originalLightStatusBars: Boolean? = null
         if (activity != null) {
@@ -120,10 +127,10 @@ fun ActiveFocusScreen(
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
 
-            // Force light (white) status bar icons for dark focus backgrounds
+            // Dynamically set status bar icons (dark icons on light canvas, white icons on dark canvas)
             val insetsController = WindowCompat.getInsetsController(window, view)
             originalLightStatusBars = insetsController.isAppearanceLightStatusBars
-            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightStatusBars = contrastPalette.statusBarsDarkIcons
 
             // Transparent status bar to let background show through
             @Suppress("DEPRECATION")
@@ -182,85 +189,12 @@ fun ActiveFocusScreen(
     ) {
         // Independent Background Layer (Clean separation for Phase 5)
         FocusBackground(preferences = preferences)
-        
-        // YouTube Player (Hidden but active if track is YouTube)
-        if (playerState.currentTrack?.isYouTube == true && (playerState.isPlaying || playerState.isConnected)) {
-            val youtubeUrl = playerState.currentTrack.uri
-            val videoIdMatch = Regex("(?:youtube\\.com\\/(?:[^/]+\\/.+\\/|(?:v|e(?:mbed)?)\\/|.*[?&]v=)|youtu\\.be\\/)([^\"&?/\\s]{11})").find(youtubeUrl)
-            val videoId = videoIdMatch?.groupValues?.get(1)
-            
-            val context = LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(videoId) {
-                if (videoId == null && playerState.isPlaying) {
-                    android.widget.Toast.makeText(
-                        context,
-                        "Invalid YouTube link",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-
-            if (videoId != null) {
-                androidx.compose.ui.viewinterop.AndroidView(
-                    modifier = Modifier.size(1.dp).alpha(0.01f),
-                    factory = { ctx ->
-                        try {
-                            android.webkit.WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                webChromeClient = android.webkit.WebChromeClient()
-                                webViewClient = object : android.webkit.WebViewClient() {
-                                    override fun onReceivedError(
-                                        view: android.webkit.WebView?,
-                                        request: android.webkit.WebResourceRequest?,
-                                        error: android.webkit.WebResourceError?
-                                    ) {
-                                        super.onReceivedError(view, request, error)
-                                        android.widget.Toast.makeText(
-                                            ctx, 
-                                            "Could not load YouTube track. Please check internet connection.", 
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                                // Force playing when loaded via iframe API or just embed autoplay
-                                val embedHtml = """
-                                    <!DOCTYPE html>
-                                    <html>
-                                      <body style="margin:0;padding:0;">
-                                        <iframe width="100%" height="100%" src="https://www.youtube.com/embed/$videoId?autoplay=1&controls=0&playsinline=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-                                      </body>
-                                    </html>
-                                """.trimIndent()
-                                loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
-                            }
-                        } catch (e: Exception) {
-                            // Fallback if WebView is not available on the device
-                            android.widget.Toast.makeText(
-                                ctx, 
-                                "WebView is not available to play YouTube audio.", 
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                            android.view.View(ctx)
-                        }
-                    },
-                    update = { view ->
-                        if (view is android.webkit.WebView) {
-                            if (isPaused || isCompleted || !playerState.isPlaying) {
-                                view.onPause()
-                            } else {
-                                view.onResume()
-                            }
-                        }
-                    }
-                )
-            }
-        }
 
         if (isCompleted) {
             // Serene Session Completion Screen
             SessionCompletedView(
                 session = session,
+                contrastPalette = contrastPalette,
                 onReturnHome = onFinishCompletedSession,
                 onStartAgain = onStartAgain,
                 modifier = Modifier
@@ -281,10 +215,15 @@ fun ActiveFocusScreen(
                     ActiveFocusLandscapeContent(
                         session = session,
                         preferences = preferences,
+                        contrastPalette = contrastPalette,
                         timeData = timeData,
                         playerState = playerState,
                         controlsVisible = controlsVisible,
                         isPaused = isPaused,
+                        externalMediaState = externalMediaState,
+                        onLaunchMusicApp = onLaunchMusicApp,
+                        onOpenPermissionSettings = onOpenPermissionSettings,
+                        onTransferToFocus = onTransferToFocus,
                         onPause = onPause,
                         onResume = onResume,
                         onEndFocusClick = onCancelRequest,
@@ -301,10 +240,15 @@ fun ActiveFocusScreen(
                     ActiveFocusPortraitContent(
                         session = session,
                         preferences = preferences,
+                        contrastPalette = contrastPalette,
                         timeData = timeData,
                         playerState = playerState,
                         controlsVisible = controlsVisible,
                         isPaused = isPaused,
+                        externalMediaState = externalMediaState,
+                        onLaunchMusicApp = onLaunchMusicApp,
+                        onOpenPermissionSettings = onOpenPermissionSettings,
+                        onTransferToFocus = onTransferToFocus,
                         onPause = onPause,
                         onResume = onResume,
                         onEndFocusClick = onCancelRequest,
@@ -339,10 +283,15 @@ fun ActiveFocusScreen(
 private fun ActiveFocusPortraitContent(
     session: SessionSnapshot,
     preferences: FocusPreferences,
+    contrastPalette: CanvasContrastPalette,
     timeData: com.sprinthon.focusclock.ui.clock.ClockTimeData,
     playerState: PlayerUiState,
     controlsVisible: Boolean,
     isPaused: Boolean,
+    externalMediaState: com.sprinthon.focusclock.domain.model.ExternalMediaSessionState?,
+    onLaunchMusicApp: ((String) -> Unit)?,
+    onOpenPermissionSettings: (() -> Unit)?,
+    onTransferToFocus: (() -> Unit)?,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onEndFocusClick: () -> Unit,
@@ -373,12 +322,21 @@ private fun ActiveFocusPortraitContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Dominant Clock Renderer
+                // Dominant Clock Renderer with dynamic contrast palette and user customized scales
+                val effectiveScale = (preferences.clockScale * if (isCompact) 0.90f else 1.0f).coerceIn(0.70f, 1.80f)
                 ClockRenderer(
                     style = session.clockStyle,
                     timeData = timeData,
+                    primaryColor = contrastPalette.primaryText,
+                    secondaryColor = contrastPalette.secondaryText,
+                    accentColor = contrastPalette.accentColor,
+                    cardBackground = contrastPalette.cardBackground,
+                    cardBorder = contrastPalette.cardBorder,
+                    cardDivider = contrastPalette.cardDivider,
                     clockFont = preferences.clockFont,
-                    scale = if (isCompact) 0.9f else 1.0f,
+                    scale = effectiveScale,
+                    analogNumeralSize = preferences.analogNumeralSize,
+                    analogNumeralScale = preferences.analogNumeralScale,
                     showDate = preferences.showDate,
                     showDayOfWeek = preferences.showDayOfWeek,
                     isLandscape = false
@@ -392,8 +350,9 @@ private fun ActiveFocusPortraitContent(
                     FocusTimerWidget(
                         session = session,
                         fontSize = if (isCompact) 22.sp else 26.sp,
-                        textColor = Color.White.copy(alpha = 0.92f),
-                        accentColor = FocusAmber
+                        textColor = contrastPalette.primaryText,
+                        secondaryColor = contrastPalette.secondaryText,
+                        accentColor = contrastPalette.accentColor
                     )
                 }
             }
@@ -409,6 +368,12 @@ private fun ActiveFocusPortraitContent(
                 FocusPlayerArea(
                     playerState = playerState,
                     controlsVisible = controlsVisible,
+                    contrastPalette = contrastPalette,
+                    audioSourceType = preferences.audioSourceType,
+                    externalMediaState = externalMediaState,
+                    onLaunchMusicApp = onLaunchMusicApp,
+                    onOpenPermissionSettings = onOpenPermissionSettings,
+                    onTransferToFocus = onTransferToFocus,
                     showWaveform = preferences.showWaveform,
                     batterySaverActive = preferences.batterySaverEnabled && session.state == SessionState.RUNNING,
                     onPlayPauseToggle = onPlayPauseToggle,
@@ -437,10 +402,10 @@ private fun ActiveFocusPortraitContent(
                         Button(
                             onClick = if (isPaused) onResume else onPause,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isPaused) FocusAmber else DarkElevatedSurface,
-                                contentColor = if (isPaused) Color.Black else Color.White
+                                containerColor = if (isPaused) contrastPalette.accentColor else contrastPalette.buttonSurface,
+                                contentColor = if (isPaused) Color.Black else contrastPalette.buttonText
                             ),
-                            border = if (!isPaused) BorderStroke(1.dp, Color(0xFF383840)) else null,
+                            border = BorderStroke(1.dp, if (isPaused) contrastPalette.accentColor else contrastPalette.buttonBorder),
                             shape = RoundedCornerShape(22.dp),
                             modifier = Modifier
                                 .height(44.dp)
@@ -466,9 +431,9 @@ private fun ActiveFocusPortraitContent(
                         OutlinedButton(
                             onClick = onEndFocusClick,
                             shape = RoundedCornerShape(22.dp),
-                            border = BorderStroke(1.dp, Color(0xFF383840)),
+                            border = BorderStroke(1.dp, contrastPalette.buttonBorder),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color.White.copy(alpha = 0.75f)
+                                contentColor = contrastPalette.secondaryText
                             ),
                             modifier = Modifier
                                 .height(44.dp)
@@ -479,7 +444,7 @@ private fun ActiveFocusPortraitContent(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "End Focus",
                                 modifier = Modifier.size(15.dp),
-                                tint = Color.White.copy(alpha = 0.75f)
+                                tint = contrastPalette.secondaryText
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
@@ -504,10 +469,15 @@ private fun ActiveFocusPortraitContent(
 private fun ActiveFocusLandscapeContent(
     session: SessionSnapshot,
     preferences: FocusPreferences,
+    contrastPalette: CanvasContrastPalette,
     timeData: com.sprinthon.focusclock.ui.clock.ClockTimeData,
     playerState: PlayerUiState,
     controlsVisible: Boolean,
     isPaused: Boolean,
+    externalMediaState: com.sprinthon.focusclock.domain.model.ExternalMediaSessionState?,
+    onLaunchMusicApp: ((String) -> Unit)?,
+    onOpenPermissionSettings: (() -> Unit)?,
+    onTransferToFocus: (() -> Unit)?,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onEndFocusClick: () -> Unit,
@@ -534,8 +504,16 @@ private fun ActiveFocusLandscapeContent(
             ClockRenderer(
                 style = session.clockStyle,
                 timeData = timeData,
+                primaryColor = contrastPalette.primaryText,
+                secondaryColor = contrastPalette.secondaryText,
+                accentColor = contrastPalette.accentColor,
+                cardBackground = contrastPalette.cardBackground,
+                cardBorder = contrastPalette.cardBorder,
+                cardDivider = contrastPalette.cardDivider,
                 clockFont = preferences.clockFont,
-                scale = 1.0f,
+                scale = preferences.clockScale.coerceIn(0.75f, 1.60f),
+                analogNumeralSize = preferences.analogNumeralSize,
+                analogNumeralScale = preferences.analogNumeralScale,
                 showDate = preferences.showDate,
                 showDayOfWeek = preferences.showDayOfWeek,
                 isLandscape = true
@@ -547,8 +525,9 @@ private fun ActiveFocusLandscapeContent(
                 FocusTimerWidget(
                     session = session,
                     fontSize = 22.sp,
-                    textColor = Color.White.copy(alpha = 0.92f),
-                    accentColor = FocusAmber
+                    textColor = contrastPalette.primaryText,
+                    secondaryColor = contrastPalette.secondaryText,
+                    accentColor = contrastPalette.accentColor
                 )
             }
         }
@@ -567,6 +546,12 @@ private fun ActiveFocusLandscapeContent(
             FocusPlayerArea(
                 playerState = playerState,
                 controlsVisible = controlsVisible,
+                contrastPalette = contrastPalette,
+                audioSourceType = preferences.audioSourceType,
+                externalMediaState = externalMediaState,
+                onLaunchMusicApp = onLaunchMusicApp,
+                onOpenPermissionSettings = onOpenPermissionSettings,
+                onTransferToFocus = onTransferToFocus,
                 showWaveform = preferences.showWaveform,
                 waveformWidth = 140.dp,
                 batterySaverActive = preferences.batterySaverEnabled && session.state == SessionState.RUNNING,
@@ -594,10 +579,10 @@ private fun ActiveFocusLandscapeContent(
                     Button(
                         onClick = if (isPaused) onResume else onPause,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isPaused) FocusAmber else DarkElevatedSurface,
-                            contentColor = if (isPaused) Color.Black else Color.White
+                            containerColor = if (isPaused) contrastPalette.accentColor else contrastPalette.buttonSurface,
+                            contentColor = if (isPaused) Color.Black else contrastPalette.buttonText
                         ),
-                        border = if (!isPaused) BorderStroke(1.dp, Color(0xFF383840)) else null,
+                        border = BorderStroke(1.dp, if (isPaused) contrastPalette.accentColor else contrastPalette.buttonBorder),
                         shape = RoundedCornerShape(22.dp),
                         modifier = Modifier
                             .height(42.dp)
@@ -623,9 +608,9 @@ private fun ActiveFocusLandscapeContent(
                     OutlinedButton(
                         onClick = onEndFocusClick,
                         shape = RoundedCornerShape(22.dp),
-                        border = BorderStroke(1.dp, Color(0xFF383840)),
+                        border = BorderStroke(1.dp, contrastPalette.buttonBorder),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White.copy(alpha = 0.75f)
+                            contentColor = contrastPalette.secondaryText
                         ),
                         modifier = Modifier
                             .height(42.dp)
@@ -636,7 +621,7 @@ private fun ActiveFocusLandscapeContent(
                             imageVector = Icons.Default.Close,
                             contentDescription = "End Focus",
                             modifier = Modifier.size(15.dp),
-                            tint = Color.White.copy(alpha = 0.75f)
+                            tint = contrastPalette.secondaryText
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
@@ -657,6 +642,7 @@ private fun ActiveFocusLandscapeContent(
 @Composable
 private fun SessionCompletedView(
     session: SessionSnapshot,
+    contrastPalette: CanvasContrastPalette,
     onReturnHome: () -> Unit,
     onStartAgain: () -> Unit,
     modifier: Modifier = Modifier
@@ -682,7 +668,7 @@ private fun SessionCompletedView(
             text = "Session Complete",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White,
+            color = contrastPalette.primaryText,
             letterSpacing = 0.5.sp
         )
 
@@ -697,7 +683,7 @@ private fun SessionCompletedView(
         Text(
             text = durationSummary,
             style = MaterialTheme.typography.bodyLarge,
-            color = Color.White.copy(alpha = 0.65f),
+            color = contrastPalette.secondaryText,
             textAlign = TextAlign.Center
         )
 
@@ -706,7 +692,7 @@ private fun SessionCompletedView(
         Button(
             onClick = onStartAgain,
             colors = ButtonDefaults.buttonColors(
-                containerColor = FocusAmber,
+                containerColor = contrastPalette.accentColor,
                 contentColor = Color.Black
             ),
             shape = RoundedCornerShape(24.dp),
@@ -728,9 +714,9 @@ private fun SessionCompletedView(
         OutlinedButton(
             onClick = onReturnHome,
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color.White
+                contentColor = contrastPalette.primaryText
             ),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, contrastPalette.buttonBorder),
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .widthIn(min = 200.dp, max = 300.dp)

@@ -2,6 +2,7 @@ package com.sprinthon.focusclock.playback
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import com.sprinthon.focusclock.domain.model.FocusTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +21,109 @@ object AudioFileHelper {
 
     private const val SAMPLE_RATE = 44100
     private const val DURATION_SECONDS = 12 // Seamless loopable audio block
+
+    private val AUDIO_EXTENSIONS = setOf("mp3", "wav", "m4a", "flac", "ogg", "aac", "opus", "wma")
+
+    data class ScannedAudioItem(
+        val uri: Uri,
+        val displayName: String,
+        val folderName: String
+    )
+
+    /**
+     * Traverses a folder selected with SAF OpenDocumentTree to find all audio tracks inside.
+     */
+    suspend fun scanFolderForAudio(context: Context, treeUri: Uri): List<ScannedAudioItem> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<ScannedAudioItem>()
+        try {
+            val docId = DocumentsContract.getTreeDocumentId(treeUri)
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+            
+            var folderDisplayName = "Local Folder"
+            try {
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                val cursor = context.contentResolver.query(
+                    docUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val nameIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                        if (nameIndex != -1) {
+                            folderDisplayName = it.getString(nameIndex) ?: "Local Folder"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // fallback
+            }
+
+            queryChildrenRecursive(context, treeUri, childrenUri, folderDisplayName, results, 0)
+        } catch (e: Exception) {
+            android.util.Log.e("AudioFileHelper", "Error scanning folder for audio", e)
+        }
+        results
+    }
+
+    private fun queryChildrenRecursive(
+        context: Context,
+        treeUri: Uri,
+        parentChildrenUri: Uri,
+        currentFolderName: String,
+        results: MutableList<ScannedAudioItem>,
+        depth: Int
+    ) {
+        if (depth > 5) return // Prevent deep circular directory traversal
+        try {
+            val cursor = context.contentResolver.query(
+                parentChildrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            )
+
+            cursor?.use {
+                val idIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+
+                while (it.moveToNext()) {
+                    val docId = if (idIdx != -1) it.getString(idIdx) else continue
+                    val displayName = if (nameIdx != -1) it.getString(nameIdx) ?: "Audio Track" else "Audio Track"
+                    val mimeType = if (mimeIdx != -1) it.getString(mimeIdx) ?: "" else ""
+
+                    if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        val subChildrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+                        queryChildrenRecursive(context, treeUri, subChildrenUri, displayName, results, depth + 1)
+                    } else {
+                        val ext = displayName.substringAfterLast(".", "").lowercase()
+                        val isAudio = mimeType.startsWith("audio/") || AUDIO_EXTENSIONS.contains(ext)
+                        if (isAudio) {
+                            val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            val cleanTitle = displayName.substringBeforeLast(".")
+                            results.add(
+                                ScannedAudioItem(
+                                    uri = documentUri,
+                                    displayName = cleanTitle,
+                                    folderName = currentFolderName
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AudioFileHelper", "Failed querying children", e)
+        }
+    }
 
     suspend fun getOrCreateTrackUri(context: Context, trackId: String): Uri = withContext(Dispatchers.IO) {
         try {

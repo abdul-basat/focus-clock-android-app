@@ -45,8 +45,8 @@ fun GlobalScaffold(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Never show nav bars on onboarding or active focus regardless of settings
-    val forceHideNav = currentRoute == Screen.Onboarding.route || currentRoute == Screen.ActiveFocus.route
+    // Never show nav bars on onboarding, active focus, or wallpaper customizer
+    val forceHideNav = currentRoute == Screen.Onboarding.route || currentRoute == Screen.ActiveFocus.route || currentRoute == Screen.WallpaperCustomizer.route
     
     val showNav = !immersiveFullscreenEnabled && !forceHideNav
 

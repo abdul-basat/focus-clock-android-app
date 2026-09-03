@@ -21,6 +21,7 @@ import com.sprinthon.focusclock.ui.components.CustomDurationDialog
 import com.sprinthon.focusclock.ui.components.ProfileSelectorBottomSheet
 import com.sprinthon.focusclock.ui.screens.ActiveFocusScreen
 import com.sprinthon.focusclock.ui.screens.ClockCanvasSettingsScreen
+import com.sprinthon.focusclock.ui.screens.ClockWallpaperCustomizationScreen
 import com.sprinthon.focusclock.ui.screens.CustomizerTab
 import com.sprinthon.focusclock.ui.screens.HomeScreen
 import com.sprinthon.focusclock.ui.screens.OnboardingScreen
@@ -38,6 +39,7 @@ sealed class Screen(val route: String) {
     object FocusSettings : Screen("settings_focus")
     object GeneralSettings : Screen("settings_general")
     object About : Screen("settings_about")
+    object WallpaperCustomizer : Screen("wallpaper_customizer")
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -48,6 +50,7 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val wallpaperConfig by viewModel.wallpaperConfigState.collectAsState()
     val currentTimeData = rememberCurrentTimeData(is24Hour = uiState.preferences.timeFormat24Hour)
 
     // React to session state transitions if needed
@@ -111,7 +114,7 @@ fun AppNavigation(
                     },
                     onFinishOnboardingCustomize = {
                         viewModel.completeOnboarding(null, customizeFirst = true)
-                        navController.navigate(Screen.Home.route) {
+                        navController.navigate(Screen.StartFocus.route) {
                             popUpTo(Screen.Onboarding.route) { inclusive = true }
                         }
                     }
@@ -139,6 +142,9 @@ fun AppNavigation(
                     },
                     onOpenClockCanvas = {
                         navController.navigate(Screen.ClockCanvas.route)
+                    },
+                    onOpenLiveWallpaper = {
+                        navController.navigate(Screen.WallpaperCustomizer.route)
                     },
                     onOpenAudio = {
                         navController.navigate(Screen.Soundscape.route)
@@ -195,7 +201,11 @@ fun AppNavigation(
                         }
                     },
                     onBack = {
-                        navController.popBackStack()
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Home.route) { inclusive = true }
+                            }
+                        }
                     }
                 )
             }
@@ -231,6 +241,48 @@ fun AppNavigation(
                     onToggleShowDate = { show -> viewModel.setShowDate(show) },
                     onToggleShowDayOfWeek = { show -> viewModel.setShowDayOfWeek(show) },
                     onSelectDateFormat = { option -> viewModel.setDateFormatOption(option) },
+                    onSelectClockScale = { scale -> viewModel.setClockScale(scale) },
+                    onSelectAnalogNumeralSize = { size -> viewModel.setAnalogNumeralSize(size) },
+                    onSelectAnalogNumeralScale = { scale -> viewModel.setAnalogNumeralScale(scale) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Screen.WallpaperCustomizer.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300)
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300)
+                    )
+                }
+            ) {
+                ClockWallpaperCustomizationScreen(
+                    wallpaperConfig = wallpaperConfig,
+                    currentTimeData = currentTimeData,
+                    onUpdatePosition = { pos -> viewModel.updateWallpaperClockPosition(pos) },
+                    onUpdateStyle = { style -> viewModel.updateWallpaperClockStyle(style) },
+                    onUpdateFont = { font -> viewModel.updateWallpaperClockFont(font) },
+                    onUpdateColor = { color -> viewModel.updateWallpaperClockColor(color) },
+                    onUpdateAnalogOrientation = { orientation -> viewModel.updateWallpaperAnalogOrientation(orientation) },
+                    onUpdateAnalogNumeralSize = { size -> viewModel.updateWallpaperAnalogNumeralSize(size) },
+                    onUpdateAnalogNumeralScale = { scale -> viewModel.updateWallpaperAnalogNumeralScale(scale) },
+                    onUpdateBackgroundType = { type -> viewModel.updateWallpaperBackgroundType(type) },
+                    onUpdateBackgroundColor = { color -> viewModel.updateWallpaperBackgroundColor(color) },
+                    onUpdateBackgroundImageUri = { uri -> viewModel.updateWallpaperBackgroundImageUri(uri) },
+                    onUpdateScrimOpacity = { opacity -> viewModel.updateWallpaperScrimOpacity(opacity) },
+                    onUpdateBlurRadius = { radius -> viewModel.updateWallpaperBlurRadius(radius) },
+                    onUpdateShowDate = { show -> viewModel.updateWallpaperShowDate(show) },
+                    onUpdateShowSeconds = { show -> viewModel.updateWallpaperShowSeconds(show) },
+                    onUpdateMotto = { show, motto -> viewModel.updateWallpaperMotto(show, motto) },
+                    onUpdateShowStreak = { show -> viewModel.updateWallpaperShowStreak(show) },
+                    onUpdate24Hour = { is24h -> viewModel.updateWallpaperTimeFormat(is24h) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -254,6 +306,8 @@ fun AppNavigation(
                     preferences = uiState.preferences,
                     playerState = uiState.playerState,
                     customTracks = uiState.customTracks,
+                    collections = uiState.collections,
+                    favoriteTrackIds = uiState.favoriteTrackIds,
                     onSelectTrack = { trackId, previewPlay ->
                         viewModel.selectTrackInSettings(trackId, previewPlay)
                     },
@@ -262,6 +316,33 @@ fun AppNavigation(
                     },
                     onDeleteCustomTrack = { trackId ->
                         viewModel.deleteCustomTrack(trackId)
+                    },
+                    onCreateCollection = { name, desc, trackIds, mode, colorHex, iconName ->
+                        viewModel.createCollection(name, desc, trackIds, mode, colorHex, iconName)
+                    },
+                    onUpdateCollection = { collection ->
+                        viewModel.updateCollection(collection)
+                    },
+                    onDeleteCollection = { collectionId ->
+                        viewModel.deleteCollection(collectionId)
+                    },
+                    onToggleFavoriteTrack = { trackId ->
+                        viewModel.toggleFavoriteTrack(trackId)
+                    },
+                    onAddTrackToCollection = { collectionId, trackId ->
+                        viewModel.addTrackToCollection(collectionId, trackId)
+                    },
+                    onRemoveTrackFromCollection = { collectionId, trackId ->
+                        viewModel.removeTrackFromCollection(collectionId, trackId)
+                    },
+                    onPlayCollection = { collectionId, startTrackId, previewPlay ->
+                        viewModel.playCollection(collectionId, startTrackId, previewPlay)
+                    },
+                    onClearActiveCollection = {
+                        viewModel.clearActiveCollection()
+                    },
+                    onSetCollectionPlaybackMode = { mode ->
+                        viewModel.setCollectionPlaybackMode(mode)
                     },
                     onTogglePlayPause = {
                         viewModel.togglePlayerPlayPause()
@@ -277,6 +358,28 @@ fun AppNavigation(
                     },
                     onToggleShowWaveform = { show ->
                         viewModel.setShowWaveform(show)
+                    },
+                    externalMediaState = uiState.externalMediaState,
+                    onSelectAudioSourceType = { source ->
+                        viewModel.setAudioSourceType(source)
+                    },
+                    onToggleExternalPlayPause = {
+                        viewModel.toggleExternalMediaPlayPause()
+                    },
+                    onSkipExternalNext = {
+                        viewModel.skipExternalMediaNext()
+                    },
+                    onSkipExternalPrevious = {
+                        viewModel.skipExternalMediaPrevious()
+                    },
+                    onLaunchMusicApp = { pkg ->
+                        viewModel.launchExternalMusicApp(pkg)
+                    },
+                    onOpenPermissionSettings = {
+                        viewModel.openNotificationListenerSettings()
+                    },
+                    onTransferExternalToFocus = {
+                        viewModel.transferExternalTrackToFocusPlayer()
                     },
                     onBack = { navController.popBackStack() }
                 )
@@ -302,6 +405,7 @@ fun AppNavigation(
                     session = uiState.session,
                     onNavigateToFocusSettings = { navController.navigate(Screen.FocusSettings.route) },
                     onNavigateToClockSettings = { navController.navigate(Screen.ClockCanvas.route) },
+                    onNavigateToLiveWallpaper = { navController.navigate(Screen.WallpaperCustomizer.route) },
                     onNavigateToBackgroundSettings = { navController.navigate(Screen.ClockCanvas.route) },
                     onNavigateToAudioSettings = { navController.navigate(Screen.Soundscape.route) },
                     onNavigateToGeneralSettings = { navController.navigate(Screen.GeneralSettings.route) },
@@ -455,10 +559,44 @@ fun AppNavigation(
                     onStartAgain = {
                         viewModel.startFocusAgain()
                     },
-                    onPlayPauseToggle = { viewModel.togglePlayerPlayPause() },
-                    onStopPlayer = { viewModel.stopPlayer() },
-                    onNextTrack = { viewModel.nextPlayerTrack() },
-                    onPreviousTrack = { viewModel.previousPlayerTrack() },
+                    externalMediaState = uiState.externalMediaState,
+                    onLaunchMusicApp = { pkg ->
+                        viewModel.launchExternalMusicApp(pkg)
+                    },
+                    onOpenPermissionSettings = {
+                        viewModel.openNotificationListenerSettings()
+                    },
+                    onTransferToFocus = {
+                        viewModel.transferExternalTrackToFocusPlayer()
+                    },
+                    onPlayPauseToggle = {
+                        if (uiState.preferences.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                            viewModel.toggleExternalMediaPlayPause()
+                        } else {
+                            viewModel.togglePlayerPlayPause()
+                        }
+                    },
+                    onStopPlayer = {
+                        if (uiState.preferences.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                            viewModel.pauseExternalMedia()
+                        } else {
+                            viewModel.stopPlayer()
+                        }
+                    },
+                    onNextTrack = {
+                        if (uiState.preferences.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                            viewModel.skipExternalMediaNext()
+                        } else {
+                            viewModel.nextPlayerTrack()
+                        }
+                    },
+                    onPreviousTrack = {
+                        if (uiState.preferences.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                            viewModel.skipExternalMediaPrevious()
+                        } else {
+                            viewModel.previousPlayerTrack()
+                        }
+                    },
                     onToggleLoop = { viewModel.togglePlayerLoop() }
                 )
             }

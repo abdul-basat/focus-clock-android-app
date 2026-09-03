@@ -5,6 +5,7 @@ import com.sprinthon.focusclock.domain.model.FocusTrack
 
 enum class PlaybackStatus {
     IDLE,
+    RESOLVING,
     BUFFERING,
     READY,
     PLAYING,
@@ -25,10 +26,15 @@ data class PlayerUiState(
     val currentPositionMs: Long = 0L,
     val hasNextTrack: Boolean = true,
     val hasPreviousTrack: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val activeCollectionName: String? = null,
+    val activeCollectionId: String? = null,
+    val collectionPlaybackMode: com.sprinthon.focusclock.domain.model.CollectionPlaybackMode = com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION
 ) {
     val trackTitle: String get() = currentTrack.title
     val artistName: String get() = currentTrack.artist
     val isLooping: Boolean get() = repeatMode != Player.REPEAT_MODE_OFF
     val isRepeatOne: Boolean get() = repeatMode == Player.REPEAT_MODE_ONE
+    val isResolving: Boolean get() = status == PlaybackStatus.RESOLVING
+    val isError: Boolean get() = status == PlaybackStatus.ERROR
 }

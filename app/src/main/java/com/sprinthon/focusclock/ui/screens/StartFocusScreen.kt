@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -150,7 +151,8 @@ fun StartFocusScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Button(
                         onClick = onStartFocus,
@@ -161,6 +163,7 @@ fun StartFocusScreen(
                         shape = RoundedCornerShape(28.dp),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .widthIn(max = 500.dp)
                             .height(56.dp)
                             .testTag("start_session_button")
                     ) {
@@ -191,13 +194,19 @@ fun StartFocusScreen(
             .fillMaxSize()
             .testTag("start_focus_screen")
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
-                .verticalScroll(scrollState)
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 600.dp)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(scrollState)
+            ) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // SECTION 1: FOCUS DURATION
@@ -317,6 +326,7 @@ fun StartFocusScreen(
             )
 
             Spacer(modifier = Modifier.height(32.dp))
+        }
         }
     }
 }

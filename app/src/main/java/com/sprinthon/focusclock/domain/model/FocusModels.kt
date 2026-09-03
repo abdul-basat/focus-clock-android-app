@@ -155,9 +155,19 @@ data class FocusProfile(
 }
 
 
+enum class AnalogNumeralSize(val displayName: String, val scale: Float, val description: String) {
+    STANDARD("Standard", 1.0f, "Classic timepiece proportions"),
+    LARGE("Large", 1.35f, "Enhanced legibility watch face"),
+    JUMBO("Jumbo", 1.70f, "Bold hero digits for executive desk view"),
+    CARDINAL("12·3·6·9 Focus", 1.50f, "Prominent cardinal markers with subtle minor hours")
+}
+
 data class FocusPreferences(
     val clockStyle: ClockStyle = ClockStyle.CLEAN_DIGITAL,
     val clockFont: ClockFont = ClockFont.BEBAS_NEUE,
+    val clockScale: Float = 1.15f,
+    val analogNumeralSize: AnalogNumeralSize = AnalogNumeralSize.LARGE,
+    val analogNumeralScale: Float = 1.35f,
     val timeFormat24Hour: Boolean = true,
     val showDate: Boolean = true,
     val showDayOfWeek: Boolean = true,
@@ -187,7 +197,34 @@ data class FocusPreferences(
     val immersiveFullscreenEnabled: Boolean = false,
     val batterySaverEnabled: Boolean = false,
     val notifyOnCompletion: Boolean = true,
-    val soundOnCompletion: Boolean = true
+    val soundOnCompletion: Boolean = true,
+    val favoriteTrackIds: Set<String> = emptySet(),
+    val activeCollectionId: String? = null,
+    val collectionPlaybackMode: CollectionPlaybackMode = CollectionPlaybackMode.LOOP_COLLECTION,
+    val audioSourceType: AudioSourceType = AudioSourceType.AMBIENT_SOUNDS
+)
+
+enum class AudioSourceType(val displayName: String, val description: String) {
+    AMBIENT_SOUNDS("Ambient Sounds", "Built-in ambient soundscapes and local focus audio"),
+    EXTERNAL_MUSIC("External Music", "Direct remote playback of Spotify, YouTube, SoundCloud & system media")
+}
+
+enum class CollectionPlaybackMode(val displayName: String, val description: String) {
+    LOOP_COLLECTION("Loop All", "Cycles through all tracks in the collection continuously"),
+    LOOP_SINGLE("Loop Single", "Repeats the current track continuously"),
+    PLAY_ONCE("Play Once", "Plays the track once and stops"),
+    PLAY_COLLECTION_ONCE("Play All Once", "Plays each track in the collection once in order, then stops")
+}
+
+data class TrackCollection(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val trackIds: List<String> = emptyList(),
+    val playbackMode: CollectionPlaybackMode = CollectionPlaybackMode.LOOP_COLLECTION,
+    val accentColorHex: Long = 0xFFF59E0B, // Amber default
+    val iconName: String = "playlist",
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 data class FocusTrack(

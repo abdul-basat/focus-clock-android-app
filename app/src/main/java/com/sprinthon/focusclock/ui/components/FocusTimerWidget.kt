@@ -46,9 +46,11 @@ fun FocusTimerWidget(
     fontSize: TextUnit = 24.sp,
     spacing: Dp = 2.dp,
     textColor: Color = Color.White.copy(alpha = 0.92f),
+    secondaryColor: Color? = null,
     accentColor: Color = FocusAmber
 ) {
     val isPaused = session.state == SessionState.PAUSED
+    val effectiveSecondaryColor = secondaryColor ?: textColor.copy(alpha = 0.65f)
 
     val timerModeLabel = when {
         isPaused -> "PAUSED"
@@ -82,7 +84,7 @@ fun FocusTimerWidget(
                 letterSpacing = 2.sp,
                 fontWeight = FontWeight.Medium,
                 fontSize = 11.sp,
-                color = if (isPaused) FocusPaused else Color.White.copy(alpha = 0.55f)
+                color = if (isPaused) FocusPaused else effectiveSecondaryColor
             )
         }
 

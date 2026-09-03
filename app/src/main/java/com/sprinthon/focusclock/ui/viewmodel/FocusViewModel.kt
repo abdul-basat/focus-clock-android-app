@@ -5,12 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import com.sprinthon.focusclock.data.FocusPreferencesRepository
+import com.sprinthon.focusclock.domain.model.AnalogNumeralOrientation
 import com.sprinthon.focusclock.domain.model.ClockStyle
 import com.sprinthon.focusclock.domain.model.FocusPreferences
 import com.sprinthon.focusclock.domain.model.FocusProfile
 import com.sprinthon.focusclock.domain.model.PresetDuration
 import com.sprinthon.focusclock.domain.model.SessionState
 import com.sprinthon.focusclock.domain.model.TimerDisplayMode
+import com.sprinthon.focusclock.domain.model.WallpaperBackgroundType
+import com.sprinthon.focusclock.domain.model.WallpaperClockPosition
+import com.sprinthon.focusclock.domain.model.WallpaperConfig
 import com.sprinthon.focusclock.domain.session.FocusSessionManager
 import com.sprinthon.focusclock.domain.session.SessionSnapshot
 import com.sprinthon.focusclock.notification.FocusNotificationHelper
@@ -18,6 +22,7 @@ import com.sprinthon.focusclock.playback.FocusChimeHelper
 import com.sprinthon.focusclock.playback.FocusHapticHelper
 import com.sprinthon.focusclock.playback.FocusPlayerManager
 import com.sprinthon.focusclock.playback.PlayerUiState
+import com.sprinthon.focusclock.ui.clock.ClockFont
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,8 +44,12 @@ data class FocusUiState(
     val controlsVisible: Boolean = false,
     val showExitConfirmationDialog: Boolean = false,
     val playerState: PlayerUiState = PlayerUiState(),
+    val externalMediaState: com.sprinthon.focusclock.domain.model.ExternalMediaSessionState = com.sprinthon.focusclock.domain.model.ExternalMediaSessionState(),
     val allProfiles: List<FocusProfile> = FocusProfile.DEFAULT_PROFILES,
-    val customTracks: List<com.sprinthon.focusclock.domain.model.FocusTrack> = emptyList()
+    val customTracks: List<com.sprinthon.focusclock.domain.model.FocusTrack> = emptyList(),
+    val collections: List<com.sprinthon.focusclock.domain.model.TrackCollection> = emptyList(),
+    val favoriteTrackIds: Set<String> = emptySet(),
+    val activeCollection: com.sprinthon.focusclock.domain.model.TrackCollection? = null
 )
 
 class FocusViewModel(
@@ -50,6 +59,7 @@ class FocusViewModel(
     private val repository = FocusPreferencesRepository(application)
     private val sessionManager = FocusSessionManager(viewModelScope)
     val playerManager = FocusPlayerManager(application, viewModelScope)
+    val systemMediaManager = com.sprinthon.focusclock.playback.SystemMediaControllerManager(application)
 
     private val _configuredDuration = MutableStateFlow(25)
     private val _isCustomDuration = MutableStateFlow(false)
@@ -79,11 +89,28 @@ class FocusViewModel(
         initialValue = emptyList()
     )
 
+    val trackCollectionsState: StateFlow<List<com.sprinthon.focusclock.domain.model.TrackCollection>> = repository.trackCollectionsFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
 
+    val favoriteTrackIdsState: StateFlow<Set<String>> = repository.favoriteTrackIdsFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptySet()
+    )
+
+    val wallpaperConfigState: StateFlow<WallpaperConfig> = repository.wallpaperConfigFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = WallpaperConfig()
+    )
 
     val sessionState: StateFlow<SessionSnapshot> = sessionManager.snapshot
 
     val playerState: StateFlow<PlayerUiState> = playerManager.playerUiState
+    val externalMediaState: StateFlow<com.sprinthon.focusclock.domain.model.ExternalMediaSessionState> = systemMediaManager.mediaState
 
     val uiState: StateFlow<FocusUiState> = combine(
         preferencesState,
@@ -96,8 +123,11 @@ class FocusViewModel(
         _controlsVisible,
         _showExitConfirmationDialog,
         playerState,
+        externalMediaState,
         customProfilesState,
-        customTracksState
+        customTracksState,
+        trackCollectionsState,
+        favoriteTrackIdsState
     ) { args: Array<Any> ->
         val prefs = args[0] as FocusPreferences
         val session = args[1] as SessionSnapshot
@@ -109,10 +139,19 @@ class FocusViewModel(
         val controls = args[7] as Boolean
         val exitDialog = args[8] as Boolean
         val player = args[9] as PlayerUiState
+        val extMedia = args[10] as com.sprinthon.focusclock.domain.model.ExternalMediaSessionState
         @Suppress("UNCHECKED_CAST")
-        val customProfiles = args[10] as List<FocusProfile>
+        val customProfiles = args[11] as List<FocusProfile>
         @Suppress("UNCHECKED_CAST")
-        val customTracks = args[11] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
+        val customTracks = args[12] as List<com.sprinthon.focusclock.domain.model.FocusTrack>
+        @Suppress("UNCHECKED_CAST")
+        val collections = args[13] as List<com.sprinthon.focusclock.domain.model.TrackCollection>
+        @Suppress("UNCHECKED_CAST")
+        val favorites = args[14] as Set<String>
+
+        val activeCollection = prefs.activeCollectionId?.let { activeId ->
+            collections.find { it.id == activeId }
+        }
 
         FocusUiState(
             preferences = prefs,
@@ -125,8 +164,12 @@ class FocusViewModel(
             controlsVisible = controls,
             showExitConfirmationDialog = exitDialog,
             playerState = player,
+            externalMediaState = extMedia,
             allProfiles = FocusProfile.DEFAULT_PROFILES + customProfiles,
-            customTracks = customTracks
+            customTracks = customTracks,
+            collections = collections,
+            favoriteTrackIds = favorites,
+            activeCollection = activeCollection
         )
     }.stateIn(
         scope = viewModelScope,
@@ -166,8 +209,11 @@ class FocusViewModel(
                 if (session.state == SessionState.COMPLETED && session.sessionId != lastCompletedSessionId && session.sessionId.isNotEmpty()) {
                     lastCompletedSessionId = session.sessionId
 
-                    // 1. Stop background music
+                    // 1. Stop background music or pause external session
                     playerManager.stop()
+                    if (preferencesState.value.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                        systemMediaManager.pause()
+                    }
 
                     val currentPrefs = preferencesState.value
 
@@ -246,16 +292,70 @@ class FocusViewModel(
 
     fun addCustomTrack(uri: String, title: String, isYouTube: Boolean = false) {
         viewModelScope.launch {
-            val track = com.sprinthon.focusclock.domain.model.FocusTrack(
-                id = java.util.UUID.randomUUID().toString(),
-                title = title,
-                artist = if (isYouTube) "YouTube Link" else "Custom Audio",
-                uri = uri,
-                isBuiltIn = false,
-                isYouTube = isYouTube
-            )
-            repository.saveCustomTrack(track)
-            selectTrackInSettings(track.id, previewPlay = true)
+            if (isYouTube) {
+                val playlistId = com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractPlaylistId(uri)
+                val videoId = com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(uri)
+
+                // If user entered a playlist URL (or playlist with list parameter)
+                if (playlistId != null && (videoId == null || uri.contains("list="))) {
+                    val playlistInfo = com.sprinthon.focusclock.playback.YouTubeStreamHelper.fetchPlaylistTracks(uri)
+                    if (playlistInfo != null && playlistInfo.tracks.isNotEmpty()) {
+                        // Save all tracks to custom tracks
+                        playlistInfo.tracks.forEach { track ->
+                            repository.saveCustomTrack(track)
+                        }
+
+                        // Create and activate collection for the playlist
+                        val collectionTitle = if (title.isNotBlank() && title != "YouTube Track") title else playlistInfo.title
+                        val collection = com.sprinthon.focusclock.domain.model.TrackCollection(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = collectionTitle,
+                            description = "YouTube Playlist by ${playlistInfo.author}",
+                            trackIds = playlistInfo.tracks.map { it.id },
+                            playbackMode = com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION,
+                            accentColorHex = 0xFFF59E0B,
+                            iconName = "playlist",
+                            createdAt = System.currentTimeMillis()
+                        )
+                        repository.saveTrackCollection(collection)
+
+                        // Immediately play the collection
+                        playCollection(collection.id, playlistInfo.tracks.first().id, previewPlay = true)
+                        return@launch
+                    }
+                }
+
+                // Single YouTube Video
+                val metadata = com.sprinthon.focusclock.playback.YouTubeStreamHelper.fetchVideoMetadata(uri)
+                val resolvedTitle = if (title.isNotBlank() && title != "YouTube Track") {
+                    title
+                } else {
+                    metadata?.title ?: "YouTube Audio"
+                }
+                val resolvedArtist = metadata?.author ?: "YouTube"
+
+                val track = com.sprinthon.focusclock.domain.model.FocusTrack(
+                    id = java.util.UUID.randomUUID().toString(),
+                    title = resolvedTitle,
+                    artist = resolvedArtist,
+                    uri = uri,
+                    isBuiltIn = false,
+                    isYouTube = true
+                )
+                repository.saveCustomTrack(track)
+                selectTrackInSettings(track.id, previewPlay = true)
+            } else {
+                val track = com.sprinthon.focusclock.domain.model.FocusTrack(
+                    id = java.util.UUID.randomUUID().toString(),
+                    title = title.ifBlank { "Custom Audio" },
+                    artist = "Local File",
+                    uri = uri,
+                    isBuiltIn = false,
+                    isYouTube = false
+                )
+                repository.saveCustomTrack(track)
+                selectTrackInSettings(track.id, previewPlay = true)
+            }
         }
     }
 
@@ -266,6 +366,120 @@ class FocusViewModel(
             if (preferencesState.value.selectedTrackId == trackId) {
                 selectTrackInSettings("deep_focus", previewPlay = false)
             }
+        }
+    }
+
+    fun createCollection(
+        name: String,
+        description: String = "",
+        trackIds: List<String> = emptyList(),
+        playbackMode: com.sprinthon.focusclock.domain.model.CollectionPlaybackMode = com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION,
+        accentColorHex: Long = 0xFFF59E0B,
+        iconName: String = "playlist"
+    ) {
+        viewModelScope.launch {
+            val collection = com.sprinthon.focusclock.domain.model.TrackCollection(
+                id = java.util.UUID.randomUUID().toString(),
+                name = name.ifBlank { "Focus Mix" },
+                description = description,
+                trackIds = trackIds,
+                playbackMode = playbackMode,
+                accentColorHex = accentColorHex,
+                iconName = iconName,
+                createdAt = System.currentTimeMillis()
+            )
+            repository.saveTrackCollection(collection)
+        }
+    }
+
+    fun updateCollection(collection: com.sprinthon.focusclock.domain.model.TrackCollection) {
+        viewModelScope.launch {
+            repository.saveTrackCollection(collection)
+            // If this is the active collection playing, update playback mode and items
+            if (preferencesState.value.activeCollectionId == collection.id) {
+                val allTracks = com.sprinthon.focusclock.playback.FocusAudioCatalog.BUILT_IN_TRACKS + customTracksState.value
+                playerManager.playCollection(
+                    collection = collection,
+                    allAvailableTracks = allTracks,
+                    startTrackId = playerState.value.currentTrack.id,
+                    autoPlay = playerState.value.isPlaying
+                )
+            }
+        }
+    }
+
+    fun deleteCollection(collectionId: String) {
+        viewModelScope.launch {
+            repository.deleteTrackCollection(collectionId)
+            if (preferencesState.value.activeCollectionId == collectionId) {
+                val allTracks = com.sprinthon.focusclock.playback.FocusAudioCatalog.BUILT_IN_TRACKS + customTracksState.value
+                playerManager.clearActiveCollection(allTracks)
+            }
+        }
+    }
+
+    fun toggleFavoriteTrack(trackId: String) {
+        viewModelScope.launch {
+            repository.toggleFavoriteTrack(trackId)
+        }
+    }
+
+    fun addTrackToCollection(collectionId: String, trackId: String) {
+        viewModelScope.launch {
+            val collection = trackCollectionsState.value.find { it.id == collectionId } ?: return@launch
+            if (!collection.trackIds.contains(trackId)) {
+                val updated = collection.copy(trackIds = collection.trackIds + trackId)
+                repository.saveTrackCollection(updated)
+            }
+        }
+    }
+
+    fun removeTrackFromCollection(collectionId: String, trackId: String) {
+        viewModelScope.launch {
+            val collection = trackCollectionsState.value.find { it.id == collectionId } ?: return@launch
+            val updated = collection.copy(trackIds = collection.trackIds.filter { it != trackId })
+            repository.saveTrackCollection(updated)
+        }
+    }
+
+    fun playCollection(
+        collectionId: String,
+        startTrackId: String? = null,
+        previewPlay: Boolean = true
+    ) {
+        viewModelScope.launch {
+            val collection = trackCollectionsState.value.find { it.id == collectionId } ?: return@launch
+            repository.updateActiveCollectionId(collectionId)
+            val allTracks = com.sprinthon.focusclock.playback.FocusAudioCatalog.BUILT_IN_TRACKS + customTracksState.value
+            val targetStart = startTrackId ?: collection.trackIds.firstOrNull() ?: "deep_focus"
+            repository.updateSelectedTrackId(targetStart)
+            playerManager.playCollection(
+                collection = collection,
+                allAvailableTracks = allTracks,
+                startTrackId = targetStart,
+                autoPlay = previewPlay
+            )
+        }
+    }
+
+    fun clearActiveCollection() {
+        viewModelScope.launch {
+            repository.updateActiveCollectionId(null)
+            val allTracks = com.sprinthon.focusclock.playback.FocusAudioCatalog.BUILT_IN_TRACKS + customTracksState.value
+            playerManager.clearActiveCollection(allTracks)
+        }
+    }
+
+    fun setCollectionPlaybackMode(mode: com.sprinthon.focusclock.domain.model.CollectionPlaybackMode) {
+        viewModelScope.launch {
+            repository.updateCollectionPlaybackMode(mode)
+            val repeatMode = when (mode) {
+                com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION -> androidx.media3.common.Player.REPEAT_MODE_ALL
+                com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_SINGLE -> androidx.media3.common.Player.REPEAT_MODE_ONE
+                com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.PLAY_ONCE,
+                com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.PLAY_COLLECTION_ONCE -> androidx.media3.common.Player.REPEAT_MODE_OFF
+            }
+            playerManager.setRepeatMode(repeatMode)
         }
     }
 
@@ -310,6 +524,24 @@ class FocusViewModel(
     fun setClockFont(font: com.sprinthon.focusclock.ui.clock.ClockFont) {
         viewModelScope.launch {
             repository.updateClockFont(font)
+        }
+    }
+
+    fun setClockScale(scale: Float) {
+        viewModelScope.launch {
+            repository.updateClockScale(scale)
+        }
+    }
+
+    fun setAnalogNumeralSize(size: com.sprinthon.focusclock.domain.model.AnalogNumeralSize) {
+        viewModelScope.launch {
+            repository.updateAnalogNumeralSize(size)
+        }
+    }
+
+    fun setAnalogNumeralScale(scale: Float) {
+        viewModelScope.launch {
+            repository.updateAnalogNumeralScale(scale)
         }
     }
 
@@ -403,6 +635,7 @@ class FocusViewModel(
     fun selectTrackInSettings(trackId: String, previewPlay: Boolean = false) {
         viewModelScope.launch {
             repository.updateSelectedTrackId(trackId)
+            playerManager.setCustomTracks(customTracksState.value)
             playerManager.selectTrack(trackId, autoPlay = previewPlay)
         }
     }
@@ -507,6 +740,115 @@ class FocusViewModel(
         }
     }
 
+    // Wallpaper Configuration Methods
+    fun updateWallpaperConfig(config: WallpaperConfig) {
+        viewModelScope.launch {
+            repository.updateWallpaperConfig(config)
+        }
+    }
+
+    fun updateWallpaperClockPosition(position: WallpaperClockPosition) {
+        viewModelScope.launch {
+            repository.updateWallpaperClockPosition(position)
+        }
+    }
+
+    fun updateWallpaperClockStyle(style: ClockStyle) {
+        viewModelScope.launch {
+            repository.updateWallpaperClockStyle(style)
+        }
+    }
+
+    fun updateWallpaperClockFont(font: ClockFont) {
+        viewModelScope.launch {
+            repository.updateWallpaperClockFont(font)
+        }
+    }
+
+    fun updateWallpaperClockColor(colorHex: Long) {
+        viewModelScope.launch {
+            repository.updateWallpaperClockColor(colorHex)
+        }
+    }
+
+    fun updateWallpaperAnalogOrientation(orientation: AnalogNumeralOrientation) {
+        viewModelScope.launch {
+            repository.updateWallpaperAnalogOrientation(orientation)
+        }
+    }
+
+    fun updateWallpaperAnalogNumeralSize(size: com.sprinthon.focusclock.domain.model.AnalogNumeralSize) {
+        viewModelScope.launch {
+            repository.updateWallpaperAnalogNumeralSize(size)
+        }
+    }
+
+    fun updateWallpaperAnalogNumeralScale(scale: Float) {
+        viewModelScope.launch {
+            repository.updateWallpaperAnalogNumeralScale(scale)
+        }
+    }
+
+    fun updateWallpaperBackgroundType(type: WallpaperBackgroundType) {
+        viewModelScope.launch {
+            repository.updateWallpaperBackgroundType(type)
+        }
+    }
+
+    fun updateWallpaperBackgroundColor(colorHex: Long) {
+        viewModelScope.launch {
+            repository.updateWallpaperBackgroundColor(colorHex)
+        }
+    }
+
+    fun updateWallpaperBackgroundImageUri(uri: String?) {
+        viewModelScope.launch {
+            repository.updateWallpaperBackgroundImageUri(uri)
+        }
+    }
+
+    fun updateWallpaperScrimOpacity(opacity: Float) {
+        viewModelScope.launch {
+            repository.updateWallpaperScrimOpacity(opacity.coerceIn(0f, 0.9f))
+        }
+    }
+
+    fun updateWallpaperBlurRadius(radius: Int) {
+        viewModelScope.launch {
+            repository.updateWallpaperBlurRadius(radius.coerceIn(0, 25))
+        }
+    }
+
+    fun updateWallpaperShowDate(show: Boolean) {
+        viewModelScope.launch {
+            repository.updateWallpaperShowDate(show)
+        }
+    }
+
+    fun updateWallpaperShowSeconds(show: Boolean) {
+        viewModelScope.launch {
+            repository.updateWallpaperShowSeconds(show)
+        }
+    }
+
+    fun updateWallpaperMotto(show: Boolean, motto: String) {
+        viewModelScope.launch {
+            repository.updateWallpaperMotto(show, motto)
+        }
+    }
+
+    fun updateWallpaperShowStreak(show: Boolean) {
+        viewModelScope.launch {
+            repository.updateWallpaperShowStreak(show)
+        }
+    }
+
+    fun updateWallpaperTimeFormat(is24Hour: Boolean) {
+        viewModelScope.launch {
+            repository.updateWallpaperTimeFormat(is24Hour)
+        }
+    }
+
 
     fun setShowCustomDurationDialog(show: Boolean) {
         _showCustomDurationDialog.value = show
@@ -529,11 +871,20 @@ class FocusViewModel(
             profileName = profileName
         )
 
-        // Handle audio autoplay preference on focus start
+        // Ensure player is up to date with custom tracks before selecting
+        val allTracks = com.sprinthon.focusclock.playback.FocusAudioCatalog.BUILT_IN_TRACKS + customTracksState.value
+        playerManager.setCustomTracks(customTracksState.value)
+
+        // Handle audio autoplay preference on focus start with authoritative selected track
+        val selectedTrackId = currentPrefs.selectedTrackId
+        val selectedTrack = allTracks.find { it.id == selectedTrackId } ?: com.sprinthon.focusclock.playback.FocusAudioCatalog.getTrackById(selectedTrackId)
+        val videoId = com.sprinthon.focusclock.playback.YouTubeStreamHelper.extractVideoId(selectedTrack.uri)
+        android.util.Log.d("FocusViewModel", "[DIAGNOSTIC] Focus Session Started: selectedTrackId=$selectedTrackId, title='${selectedTrack.title}', isYouTube=${selectedTrack.isYouTube}, videoId=$videoId, originalUrl=${selectedTrack.uri}, autoPlayMusicOnFocus=${currentPrefs.autoPlayMusicOnFocus}")
+
         if (currentPrefs.autoPlayMusicOnFocus) {
-            playerManager.selectTrack(currentPrefs.selectedTrackId, autoPlay = true)
+            playerManager.selectTrack(selectedTrackId, autoPlay = true)
         } else {
-            playerManager.selectTrack(currentPrefs.selectedTrackId, autoPlay = false)
+            playerManager.selectTrack(selectedTrackId, autoPlay = false)
         }
 
         // Trigger session start haptic if vibration feedback is enabled
@@ -617,10 +968,102 @@ class FocusViewModel(
         showControlsTemporarily()
     }
 
+    fun setAudioSourceType(type: com.sprinthon.focusclock.domain.model.AudioSourceType) {
+        viewModelScope.launch {
+            repository.updateAudioSourceType(type)
+            if (type == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+                playerManager.stop()
+                systemMediaManager.refreshActiveSession()
+            }
+        }
+    }
+
+    fun toggleExternalMediaPlayPause() {
+        systemMediaManager.togglePlayPause()
+        showControlsTemporarily()
+    }
+
+    fun playExternalMedia() {
+        systemMediaManager.play()
+        showControlsTemporarily()
+    }
+
+    fun pauseExternalMedia() {
+        systemMediaManager.pause()
+        showControlsTemporarily()
+    }
+
+    fun skipExternalMediaNext() {
+        systemMediaManager.skipToNext()
+        showControlsTemporarily()
+    }
+
+    fun skipExternalMediaPrevious() {
+        systemMediaManager.skipToPrevious()
+        showControlsTemporarily()
+    }
+
+    fun seekExternalMedia(positionMs: Long) {
+        systemMediaManager.seekTo(positionMs)
+        showControlsTemporarily()
+    }
+
+    fun launchExternalMusicApp(packageName: String): Boolean {
+        return systemMediaManager.launchApp(packageName)
+    }
+
+    fun refreshExternalMediaSession() {
+        systemMediaManager.refreshActiveSession()
+    }
+
+    fun openNotificationListenerSettings() {
+        systemMediaManager.openPermissionSettings()
+    }
+
+    fun transferExternalTrackToFocusPlayer() {
+        val external = externalMediaState.value
+        val trackTitle = if (external.title.isNotBlank()) external.title else "YouTube Audio"
+        viewModelScope.launch {
+            val hasDistinctArtist = external.artist.isNotBlank() && !external.artist.equals(external.appName, ignoreCase = true)
+            val query = if (hasDistinctArtist) {
+                "$trackTitle ${external.artist}"
+            } else {
+                trackTitle
+            }
+            val encodedQuery = try {
+                java.net.URLEncoder.encode(query, "UTF-8")
+            } catch (e: Exception) {
+                query
+            }
+            val youtubeSearchUri = "https://www.youtube.com/results?search_query=$encodedQuery"
+            
+            val track = com.sprinthon.focusclock.domain.model.FocusTrack(
+                id = java.util.UUID.randomUUID().toString(),
+                title = trackTitle,
+                artist = if (external.artist.isNotBlank()) external.artist else "YouTube",
+                uri = youtubeSearchUri,
+                isBuiltIn = false,
+                isYouTube = true
+            )
+            repository.saveCustomTrack(track)
+            
+            // Switch audio source to Ambient/Internal so it plays within the focus screen
+            setAudioSourceType(com.sprinthon.focusclock.domain.model.AudioSourceType.AMBIENT_SOUNDS)
+            selectTrackInSettings(track.id, previewPlay = true)
+            
+            // Pause the external media app
+            systemMediaManager.pause()
+            showControlsTemporarily()
+        }
+    }
+
     fun pauseFocusSession() {
         sessionManager.pauseSession()
-        // Stop music when focus is paused
+        // Stop ambient music or pause external music when focus is paused
         playerManager.pause()
+        if (preferencesState.value.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+            systemMediaManager.pause()
+        }
         showControlsTemporarily()
     }
 
@@ -636,6 +1079,9 @@ class FocusViewModel(
     fun cancelFocusSession() {
         // Stop music immediately when session is cancelled
         playerManager.stop()
+        if (preferencesState.value.audioSourceType == com.sprinthon.focusclock.domain.model.AudioSourceType.EXTERNAL_MUSIC) {
+            systemMediaManager.pause()
+        }
         sessionManager.cancelSession()
     }
 

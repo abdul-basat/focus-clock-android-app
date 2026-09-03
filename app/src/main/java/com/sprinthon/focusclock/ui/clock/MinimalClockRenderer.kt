@@ -42,13 +42,13 @@ fun MinimalClockRenderer(
         val availableHeight = maxHeight
 
         val baseFontSize = if (isLandscape) {
-            val h = availableHeight.value * 0.42f * scale
-            val w = availableWidth.value * 0.30f * scale
-            minOf(h, w).coerceIn(40f, 180f)
+            val h = availableHeight.value * 0.48f * scale
+            val w = availableWidth.value * 0.36f * scale
+            minOf(h, w).coerceIn(40f, 240f)
         } else {
-            val h = availableHeight.value * 0.28f * scale
-            val w = availableWidth.value * 0.42f * scale
-            minOf(h, w).coerceIn(36f, 150f)
+            val h = availableHeight.value * 0.34f * scale
+            val w = availableWidth.value * 0.52f * scale
+            minOf(h, w).coerceIn(36f, 220f)
         }
 
         val dateFontSize = (baseFontSize * 0.15f).coerceIn(12f, 18f)

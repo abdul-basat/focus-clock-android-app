@@ -41,15 +41,15 @@ fun CleanDigitalClockRenderer(
         val availableWidth = maxWidth
         val availableHeight = maxHeight
 
-        // Dynamic adaptive font sizing based on available dimensions
+        // Dynamic adaptive font sizing based on available dimensions - hero proportions
         val baseFontSize = if (isLandscape) {
-            val h = availableHeight.value * 0.40f * scale
-            val w = availableWidth.value * 0.28f * scale
-            minOf(h, w).coerceIn(40f, 170f)
+            val h = availableHeight.value * 0.48f * scale
+            val w = availableWidth.value * 0.36f * scale
+            minOf(h, w).coerceIn(40f, 240f)
         } else {
-            val h = availableHeight.value * 0.27f * scale
-            val w = availableWidth.value * 0.40f * scale
-            minOf(h, w).coerceIn(36f, 140f)
+            val h = availableHeight.value * 0.34f * scale
+            val w = availableWidth.value * 0.52f * scale
+            minOf(h, w).coerceIn(36f, 220f)
         }
 
         val dateFontSize = (baseFontSize * 0.16f).coerceIn(13f, 18f)

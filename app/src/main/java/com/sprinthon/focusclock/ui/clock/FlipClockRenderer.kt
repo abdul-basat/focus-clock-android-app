@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,12 +35,20 @@ fun FlipClockRenderer(
     modifier: Modifier = Modifier,
     primaryColor: Color = Color.White,
     secondaryColor: Color = Color(0xFF9E9EA4),
+    cardBackground: Color? = null,
+    cardBorder: Color? = null,
+    cardDivider: Color? = null,
     clockFont: ClockFont = ClockFont.BEBAS_NEUE,
     showDate: Boolean = true,
     showDayOfWeek: Boolean = true,
     scale: Float = 1.0f,
     isLandscape: Boolean = false
 ) {
+    val isLight = primaryColor.luminance() < 0.5f
+    val effectiveCardBackground = cardBackground ?: if (isLight) Color(0xFFE4E4EC) else Color(0xFF1E1E22)
+    val effectiveCardBorder = cardBorder ?: if (isLight) Color(0xFFCBCBD4) else Color(0xFF2C2C32)
+    val effectiveCardDivider = cardDivider ?: if (isLight) Color(0xFFB8B8C2) else Color(0xFF000000).copy(alpha = 0.8f)
+
     BoxWithConstraints(
         modifier = modifier.testTag("flip_clock"),
         contentAlignment = Alignment.Center
@@ -48,13 +57,13 @@ fun FlipClockRenderer(
         val availableHeight = maxHeight
 
         val cardWidth = if (isLandscape) {
-            val w = availableWidth.value * 0.40f * scale
-            val h = availableHeight.value * 0.45f * scale
-            minOf(w, h * 1.5f).coerceIn(80f, 220f).dp
+            val w = availableWidth.value * 0.50f * scale
+            val h = availableHeight.value * 0.55f * scale
+            minOf(w, h * 1.5f).coerceIn(80f, 320f).dp
         } else {
-            val w = availableWidth.value * 0.58f * scale
-            val h = availableHeight.value * 0.28f * scale
-            minOf(w, h * 1.8f).coerceIn(70f, 200f).dp
+            val w = availableWidth.value * 0.68f * scale
+            val h = availableHeight.value * 0.35f * scale
+            minOf(w, h * 1.8f).coerceIn(70f, 300f).dp
         }
 
         val cardHeight = (cardWidth.value * 0.72f).dp
@@ -73,6 +82,10 @@ fun FlipClockRenderer(
                 cardHeight = cardHeight,
                 fontSize = fontSize,
                 textColor = primaryColor,
+                cardBackgroundColor = effectiveCardBackground,
+                cardBorderColor = effectiveCardBorder,
+                cardDividerColor = effectiveCardDivider,
+                isLightMode = isLight,
                 clockFont = clockFont
             )
 
@@ -85,6 +98,10 @@ fun FlipClockRenderer(
                 cardHeight = cardHeight,
                 fontSize = fontSize,
                 textColor = primaryColor,
+                cardBackgroundColor = effectiveCardBackground,
+                cardBorderColor = effectiveCardBorder,
+                cardDividerColor = effectiveCardDivider,
+                isLightMode = isLight,
                 clockFont = clockFont
             )
 
@@ -134,26 +151,44 @@ private fun FlipDigitCard(
     cardHeight: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
     textColor: Color,
+    cardBackgroundColor: Color,
+    cardBorderColor: Color,
+    cardDividerColor: Color,
+    isLightMode: Boolean,
     clockFont: ClockFont = ClockFont.BEBAS_NEUE
 ) {
     val cornerShape = RoundedCornerShape(12.dp)
+
+    val backgroundModifier = if (isLightMode) {
+        Modifier.background(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    cardBackgroundColor,
+                    cardBackgroundColor.copy(alpha = 0.95f),
+                    cardBackgroundColor.copy(alpha = 0.90f)
+                )
+            )
+        )
+    } else {
+        Modifier.background(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF1E1E22),
+                    Color(0xFF141416),
+                    Color(0xFF0D0D0E)
+                )
+            )
+        )
+    }
 
     Box(
         modifier = Modifier
             .size(width = cardWidth, height = cardHeight)
             .clip(cornerShape)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF1E1E22),
-                        Color(0xFF141416),
-                        Color(0xFF0D0D0E)
-                    )
-                )
-            )
+            .then(backgroundModifier)
             .border(
                 width = 1.dp,
-                color = Color(0xFF2C2C32),
+                color = cardBorderColor,
                 shape = cornerShape
             ),
         contentAlignment = Alignment.Center
@@ -163,7 +198,7 @@ private fun FlipDigitCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.5.dp)
-                .background(Color(0xFF000000).copy(alpha = 0.8f))
+                .background(cardDividerColor)
                 .align(Alignment.Center)
         )
 
