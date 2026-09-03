@@ -1,5 +1,6 @@
 package com.sprinthon.focusclock.domain.model
 
+import androidx.compose.runtime.Immutable
 import com.sprinthon.focusclock.ui.clock.ClockFont
 
 enum class ClockStyle(val displayName: String, val description: String) {
@@ -216,6 +217,7 @@ enum class CollectionPlaybackMode(val displayName: String, val description: Stri
     PLAY_COLLECTION_ONCE("Play All Once", "Plays each track in the collection once in order, then stops")
 }
 
+@Immutable
 data class TrackCollection(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
@@ -227,6 +229,7 @@ data class TrackCollection(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 data class FocusTrack(
     val id: String,
     val title: String,

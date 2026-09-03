@@ -7,8 +7,10 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -19,10 +21,22 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,7 +98,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.DismissDirection
+import androidx.compose.material3.DismissValue
+import androidx.compose.material3.SwipeToDismiss
+import androidx.compose.material3.rememberDismissState
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -96,8 +119,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -110,15 +138,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import com.sprinthon.focusclock.analytics.AmbientAnalytics
 import com.sprinthon.focusclock.domain.model.CollectionPlaybackMode
 import com.sprinthon.focusclock.domain.model.FocusPreferences
 import com.sprinthon.focusclock.domain.model.FocusTrack
@@ -129,16 +166,50 @@ import com.sprinthon.focusclock.playback.PlayerUiState
 import com.sprinthon.focusclock.ui.components.SettingsCard
 import com.sprinthon.focusclock.ui.components.SettingsSectionHeader
 import com.sprinthon.focusclock.ui.components.SettingsToggleRow
+import com.sprinthon.focusclock.ui.theme.AmbientColorTokens
+import com.sprinthon.focusclock.ui.theme.AmbientTheme
 import com.sprinthon.focusclock.ui.theme.AmoledBlack
+import com.sprinthon.focusclock.ui.theme.DarkAmbientColorTokens
 import com.sprinthon.focusclock.ui.theme.DarkOutline
+import com.sprinthon.focusclock.ui.theme.FocusActiveGlow
 import com.sprinthon.focusclock.ui.theme.FocusAmber
+import com.sprinthon.focusclock.ui.theme.LightAmbientColorTokens
+import com.sprinthon.focusclock.ui.theme.LocalAmbientColors
 
-private enum class AmbientTab(val title: String) {
-    ALL("All Sounds"),
-    COLLECTIONS("Collections"),
-    SOUNDSCAPES("Soundscapes"),
-    CUSTOM("Custom Audio")
+/**
+ * Phase 4 Milestone 4.2: Unified filter type enum for ambient soundscape categories.
+ */
+enum class AmbientFilterType(val title: String, val icon: ImageVector) {
+    ALL("All", Icons.Default.MusicNote),
+    FAVORITES("Favorites", Icons.Default.Favorite),
+    SOUNDSCAPES("Soundscapes", Icons.Default.GraphicEq),
+    COLLECTIONS("Collections", Icons.Default.Folder),
+    CUSTOM("Custom", Icons.Default.Add)
 }
+
+typealias AmbientTab = AmbientFilterType
+
+/**
+ * Phase 2 Milestone 2.2: Mini-player vertical swipe-to-expand drag anchors.
+ */
+enum class MiniPlayerDragAnchor {
+    Collapsed,
+    Expanded
+}
+
+/**
+ * Phase 4 Milestone 4.1: Normalized ambient playback state representation.
+ * Decouples high-frequency player state updates from UI components that only need
+ * stable playback flags.
+ */
+@Stable
+data class AmbientPlaybackUiState(
+    val isPlaying: Boolean,
+    val selectedTrackId: String,
+    val musicVolume: Float,
+    val activeCollectionId: String?,
+    val collectionPlaybackMode: CollectionPlaybackMode
+)
 
 val COLLECTION_PALETTE = listOf(
     0xFFF59E0B, // Amber
@@ -191,7 +262,10 @@ fun AmbientSoundSettingsScreen(
     onTransferExternalToFocus: (() -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by remember { mutableStateOf(AmbientTab.ALL) }
+    var showPlaybackDetails by remember { mutableStateOf(false) }
+    var showQuickSettings by remember { mutableStateOf(false) }
     var showAddTrackDialog by remember { mutableStateOf(false) }
     var showCreateCollectionDialog by remember { mutableStateOf(false) }
     var collectionToEdit by remember { mutableStateOf<TrackCollection?>(null) }
@@ -201,19 +275,111 @@ fun AmbientSoundSettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // Phase 8 Milestone 8.3: UX Analytics screen lifecycle tracking
+    val screenStartTime = remember { System.currentTimeMillis() }
+    var hasLoggedFirstPlay by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        AmbientAnalytics.logScreenOpened()
+        onDispose {
+            val sessionSec = (System.currentTimeMillis() - screenStartTime) / 1000
+            AmbientAnalytics.logSessionDuration(sessionSec)
+        }
+    }
+
+    // Phase 1 Milestone 1.4: Destructive action delete handler with 5-second Undo window
+    val handleDeleteTrackWithUndo = { trackId: String ->
+        AmbientAnalytics.logGestureUsed("swipe_delete", trackId)
+        val trackToDelete = customTracks.find { it.id == trackId }
+        onDeleteCustomTrack(trackId)
+        if (trackToDelete != null) {
+            coroutineScope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Removed '${trackToDelete.title}'",
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    onAddCustomTrack(trackToDelete.uri, trackToDelete.title, trackToDelete.isYouTube)
+                }
+            }
+        }
+    }
+
+    val isDark = isSystemInDarkTheme()
+    val ambientTokens = remember(isDark) {
+        if (isDark) DarkAmbientColorTokens else LightAmbientColorTokens
+    }
+
     val allTracks = remember(customTracks) {
         FocusAudioCatalog.BUILT_IN_TRACKS + customTracks
     }
-    val activeTrack = allTracks.find { it.id == preferences.selectedTrackId } ?: allTracks.first()
-    val activeCollection = collections.find { it.id == preferences.activeCollectionId }
+    val activeTrack by remember(allTracks, preferences.selectedTrackId) {
+        derivedStateOf { allTracks.find { it.id == preferences.selectedTrackId } ?: allTracks.first() }
+    }
+    val activeCollection by remember(collections, preferences.activeCollectionId) {
+        derivedStateOf { collections.find { it.id == preferences.activeCollectionId } }
+    }
+    val favoriteTracks by remember(allTracks, favoriteTrackIds) {
+        derivedStateOf { allTracks.filter { favoriteTrackIds.contains(it.id) } }
+    }
+    val builtInTracks by remember {
+        derivedStateOf { FocusAudioCatalog.BUILT_IN_TRACKS }
+    }
+
+    val playbackUiState by remember(
+        playerState.isPlaying,
+        preferences.selectedTrackId,
+        preferences.musicVolume,
+        preferences.activeCollectionId,
+        preferences.collectionPlaybackMode
+    ) {
+        derivedStateOf {
+            AmbientPlaybackUiState(
+                isPlaying = playerState.isPlaying,
+                selectedTrackId = preferences.selectedTrackId,
+                musicVolume = preferences.musicVolume,
+                activeCollectionId = preferences.activeCollectionId,
+                collectionPlaybackMode = preferences.collectionPlaybackMode
+            )
+        }
+    }
 
     // SAF Local File Picker Launcher (Bulk / Multiple Files)
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
+            // Phase 7 Milestone 7.2: Validate file formats
+            val supportedFormats = setOf("mp3", "wav", "m4a", "flac", "ogg", "aac", "opus")
+            var unsupportedCount = 0
             var addedCount = 0
+            var lastAddedUri = ""
+            var lastAddedTitle = ""
+
             uris.forEachIndexed { index, uri ->
+                var fileName = ""
+                var fileExtension = ""
+                try {
+                    val cursor = context.contentResolver.query(uri, null, null, null, null)
+                    cursor?.use {
+                        if (it.moveToFirst()) {
+                            val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1) {
+                                val fullName = it.getString(nameIndex)
+                                fileName = fullName.substringBeforeLast(".")
+                                fileExtension = fullName.substringAfterLast(".", "").lowercase()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {}
+
+                // Phase 7 Milestone 7.2: Check if format is supported
+                if (fileExtension !in supportedFormats) {
+                    unsupportedCount++
+                    return@forEachIndexed
+                }
+
                 try {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
@@ -222,19 +388,6 @@ fun AmbientSoundSettingsScreen(
                 } catch (e: Exception) {
                     // Provider may not support persistable permissions
                 }
-                
-                var fileName = ""
-                try {
-                    val cursor = context.contentResolver.query(uri, null, null, null, null)
-                    cursor?.use {
-                        if (it.moveToFirst()) {
-                            val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                            if (nameIndex != -1) {
-                                fileName = it.getString(nameIndex).substringBeforeLast(".")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {}
 
                 val title = if (fileName.isNotBlank()) {
                     fileName
@@ -244,14 +397,36 @@ fun AmbientSoundSettingsScreen(
                     if (uris.size > 1) "Local Track ${index + 1}" else "Local Track"
                 }
                 onAddCustomTrack(uri.toString(), title, false)
+                lastAddedUri = uri.toString()
+                lastAddedTitle = title
                 addedCount++
             }
-            if (addedCount > 1) {
-                Toast.makeText(context, "Successfully added $addedCount tracks", Toast.LENGTH_SHORT).show()
-            } else if (addedCount == 1) {
-                Toast.makeText(context, "Track added to library", Toast.LENGTH_SHORT).show()
+
+            // Phase 7 Milestone 7.2: Show error for unsupported formats
+            if (unsupportedCount > 0) {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = "$unsupportedCount unsupported format(s). Try MP3, WAV, or OGG.",
+                        duration = SnackbarDuration.Short
+                    )
+                }
             }
-            showAddTrackDialog = false
+
+            if (addedCount > 0) {
+                showAddTrackDialog = false
+
+            // Phase 5 Milestone 5.3: Success feedback with direct Auto-Play CTA
+            coroutineScope.launch {
+                val msg = if (addedCount > 1) "Imported $addedCount tracks to Custom Audio" else "Added '$lastAddedTitle' to Custom Audio"
+                val result = snackbarHostState.showSnackbar(
+                    message = msg,
+                    actionLabel = "Play Now",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed && lastAddedUri.isNotBlank()) {
+                    onSelectTrack(lastAddedUri, true)
+                }
+            }
         }
     }
 
@@ -274,11 +449,19 @@ fun AmbientSoundSettingsScreen(
                 Toast.makeText(context, "Scanning folder for audio tracks...", Toast.LENGTH_SHORT).show()
                 val scannedTracks = AudioFileHelper.scanFolderForAudio(context, treeUri)
                 isScanningFolder = false
-                
-                if (scannedTracks.isEmpty()) {
-                    Toast.makeText(context, "No audio files found in selected folder", Toast.LENGTH_LONG).show()
+
+                // Phase 7 Milestone 7.2: Filter unsupported formats from folder scan
+                val supportedFormats = setOf("mp3", "wav", "m4a", "flac", "ogg", "aac", "opus")
+                val validTracks = scannedTracks.filter { scanned ->
+                    val extension = scanned.displayName.substringAfterLast(".", "").lowercase()
+                    extension in supportedFormats
+                }
+                val unsupportedCount = scannedTracks.size - validTracks.size
+
+                if (validTracks.isEmpty()) {
+                    Toast.makeText(context, "No supported audio files found in selected folder", Toast.LENGTH_LONG).show()
                 } else {
-                    scannedTracks.forEach { scanned ->
+                    validTracks.forEach { scanned ->
                         try {
                             context.contentResolver.takePersistableUriPermission(
                                 scanned.uri,
@@ -287,12 +470,26 @@ fun AmbientSoundSettingsScreen(
                         } catch (e: Exception) {}
                         onAddCustomTrack(scanned.uri.toString(), scanned.displayName, false)
                     }
-                    Toast.makeText(
-                        context,
-                        "Imported ${scannedTracks.size} tracks from folder!",
-                        Toast.LENGTH_LONG
-                    ).show()
                     showAddTrackDialog = false
+
+                    // Phase 7 Milestone 7.2: Show warning for unsupported formats
+                    if (unsupportedCount > 0) {
+                        snackbarHostState.showSnackbar(
+                            message = "$unsupportedCount unsupported file(s) skipped. Try MP3, WAV, or OGG.",
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+
+                    // Phase 5 Milestone 5.3: Success feedback with direct Auto-Play CTA
+                    val firstTrackUri = validTracks.firstOrNull()?.uri?.toString()
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Imported ${validTracks.size} tracks from folder!",
+                        actionLabel = "Play Now",
+                        duration = SnackbarDuration.Short
+                    )
+                    if (result == SnackbarResult.ActionPerformed && firstTrackUri != null) {
+                        onSelectTrack(firstTrackUri, true)
+                    }
                 }
             }
         }
@@ -326,17 +523,32 @@ fun AmbientSoundSettingsScreen(
         folderPickerLauncher.launch(null)
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("ambient_sound_settings_screen"),
-        containerColor = AmoledBlack,
-        topBar = {
+    CompositionLocalProvider(LocalAmbientColors provides ambientTokens) {
+        Scaffold(
+            modifier = modifier
+                .fillMaxSize()
+                .testTag("ambient_sound_settings_screen"),
+            containerColor = ambientTokens.ambientSurface,
+            snackbarHost = {
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    snackbar = { data ->
+                        Snackbar(
+                            snackbarData = data,
+                            containerColor = ambientTokens.ambientSurfaceVariant,
+                            contentColor = ambientTokens.ambientOnSurface,
+                            actionColor = ambientTokens.ambientAccent,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                )
+            },
+            topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(
-                            text = "Soundscape & Collections",
+                            text = "Ambient Soundscapes",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 20.sp
@@ -344,11 +556,7 @@ fun AmbientSoundSettingsScreen(
                             color = Color.White
                         )
                         Text(
-                            text = if (activeCollection != null) {
-                                "Collection: ${activeCollection.name} · ${activeCollection.playbackMode.displayName}"
-                            } else {
-                                "${activeTrack.title} · ${if (playerState.isPlaying) "Auditioning" else "Ready"}"
-                            },
+                            text = "${allTracks.size} Tracks Available",
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = FocusAmber,
                             maxLines = 1,
@@ -365,6 +573,24 @@ fun AmbientSoundSettingsScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = Color.White
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            showQuickSettings = true
+                            AmbientAnalytics.logSettingsOpened()
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("quick_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Quick Settings",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 },
@@ -385,182 +611,211 @@ fun AmbientSoundSettingsScreen(
                     .widthIn(max = 620.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .verticalScroll(scrollState)
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // ==========================================
-                // 1. HERO MASTER AUDITION & PLAYBACK CARD
+                // 1. COMPACT STICKY MINI-PLAYER BAR (Phase 2 & Phase 4)
                 // ==========================================
-                HeroAuditionCard(
+                AmbientMiniPlayerBar(
                     activeTrack = activeTrack,
                     activeCollection = activeCollection,
-                    playerState = playerState,
-                    preferences = preferences,
-                    onTogglePlayPause = {
-                        if (preferences.selectedTrackId == activeTrack.id && playerState.isPlaying) {
-                            onTogglePlayPause()
-                        } else {
-                            onSelectTrack(activeTrack.id, true)
-                        }
+                    playbackUiState = playbackUiState,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onVolumeToggle = {
+                        val newVol = if (preferences.musicVolume > 0f) 0f else 0.7f
+                        onVolumeChange(newVol)
                     },
-                    onVolumeChange = onVolumeChange,
-                    onClearCollection = onClearActiveCollection,
-                    onSelectPlaybackMode = { mode ->
-                        onSetCollectionPlaybackMode(mode)
-                    }
+                    onExpandDetails = { showPlaybackDetails = true },
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // ==========================================
-                // 2. CATEGORY TABS
+                // SCROLLABLE CONTENT (Phase 2 Sticky Header)
                 // ==========================================
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTab.ordinal,
-                    containerColor = Color(0xFF101014),
-                    contentColor = FocusAmber,
-                    edgePadding = 0.dp,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
-                            color = FocusAmber,
-                            height = 2.5.dp
-                        )
-                    },
-                    divider = {
-                        HorizontalDivider(color = Color(0xFF22222A), thickness = 0.75.dp)
-                    },
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .weight(1f)
+                        .verticalScroll(scrollState)
                 ) {
-                    AmbientTab.values().forEach { tab ->
-                        val isSelected = selectedTab == tab
-                        Tab(
-                            selected = isSelected,
-                            onClick = { selectedTab = tab },
-                            text = {
-                                Text(
-                                    text = tab.title,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 13.sp,
-                                    color = if (isSelected) FocusAmber else Color(0xFF9E9EA8)
+                    // ==========================================
+                    // 2. CATEGORY FILTER CHIPS (Phase 3 Milestone 3.1)
+                    // ==========================================
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(AmbientTab.values()) { tab ->
+                            val isSelected = selectedTab == tab
+                            val count = when (tab) {
+                                AmbientTab.ALL -> allTracks.size
+                                AmbientTab.FAVORITES -> favoriteTrackIds.size
+                                AmbientTab.SOUNDSCAPES -> FocusAudioCatalog.BUILT_IN_TRACKS.size
+                                AmbientTab.COLLECTIONS -> collections.size
+                                AmbientTab.CUSTOM -> customTracks.size
+                            }
+
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedTab = tab
+                                    AmbientAnalytics.logFilterChanged(tab.name)
+                                },
+                                label = {
+                                    Text(
+                                        text = "${tab.title} ($count)",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 12.5.sp
+                                        )
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = if (isSelected) Color(0xFF141418) else (if (tab == AmbientTab.FAVORITES) ambientTokens.ambientError else ambientTokens.ambientAccent)
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = ambientTokens.ambientSurface,
+                                    labelColor = ambientTokens.ambientOnSurfaceMuted,
+                                    selectedContainerColor = ambientTokens.ambientAccent,
+                                    selectedLabelColor = Color(0xFF141418),
+                                    selectedLeadingIconColor = Color(0xFF141418)
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = ambientTokens.ambientOutline,
+                                    selectedBorderColor = ambientTokens.ambientAccent,
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 1.dp
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .height(38.dp)
+                                    .testTag("tab_${tab.name.lowercase()}")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ==========================================
+                    // 3. TAB CONTENT (AnimatedContent - Phase 3 Milestone 3.2)
+                    // ==========================================
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                                slideInVertically(
+                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                    initialOffsetY = { 24 }
+                                )) togetherWith
+                                fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing))
+                        },
+                        label = "tab_content_transition"
+                    ) { currentTab ->
+                        when (currentTab) {
+                            AmbientTab.ALL -> {
+                                AllTracksView(
+                                    allTracks = allTracks,
+                                    preferences = preferences,
+                                    playerState = playerState,
+                                    favoriteTrackIds = favoriteTrackIds,
+                                    onSelectTrack = onSelectTrack,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onToggleFavorite = onToggleFavoriteTrack,
+                                    onAddToCollection = { track -> trackForAddToCollection = track },
+                                    onDeleteCustomTrack = handleDeleteTrackWithUndo,
+                                    onAddCustomClick = { showAddTrackDialog = true }
                                 )
-                            },
-                            modifier = Modifier.testTag("tab_${tab.name.lowercase()}")
-                        )
+                            }
+                            AmbientTab.FAVORITES -> {
+                                FavoritesOnlyView(
+                                    allTracks = allTracks,
+                                    preferences = preferences,
+                                    playerState = playerState,
+                                    favoriteTrackIds = favoriteTrackIds,
+                                    onSelectTrack = onSelectTrack,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onToggleFavorite = onToggleFavoriteTrack,
+                                    onAddToCollection = { track -> trackForAddToCollection = track },
+                                    onDeleteCustomTrack = handleDeleteTrackWithUndo
+                                )
+                            }
+                            AmbientTab.COLLECTIONS -> {
+                                CollectionsView(
+                                    collections = collections,
+                                    allTracks = allTracks,
+                                    preferences = preferences,
+                                    playerState = playerState,
+                                    favoriteTrackIds = favoriteTrackIds,
+                                    onCreateCollectionClick = { showCreateCollectionDialog = true },
+                                    onEditCollection = { col -> collectionToEdit = col },
+                                    onDeleteCollection = onDeleteCollection,
+                                    onPlayCollection = onPlayCollection,
+                                    onRemoveTrackFromCollection = onRemoveTrackFromCollection,
+                                    onToggleFavorite = onToggleFavoriteTrack,
+                                    onSelectTrack = onSelectTrack,
+                                    onTogglePlayPause = onTogglePlayPause
+                                )
+                            }
+                            AmbientTab.SOUNDSCAPES -> {
+                                SoundscapesOnlyView(
+                                    builtInTracks = FocusAudioCatalog.BUILT_IN_TRACKS,
+                                    preferences = preferences,
+                                    playerState = playerState,
+                                    favoriteTrackIds = favoriteTrackIds,
+                                    onSelectTrack = onSelectTrack,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onToggleFavorite = onToggleFavoriteTrack,
+                                    onAddToCollection = { track -> trackForAddToCollection = track }
+                                )
+                            }
+                            AmbientTab.CUSTOM -> {
+                                CustomTracksOnlyView(
+                                    customTracks = customTracks,
+                                    preferences = preferences,
+                                    playerState = playerState,
+                                    favoriteTrackIds = favoriteTrackIds,
+                                    onSelectTrack = onSelectTrack,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onToggleFavorite = onToggleFavoriteTrack,
+                                    onAddToCollection = { track -> trackForAddToCollection = track },
+                                    onDeleteCustomTrack = handleDeleteTrackWithUndo,
+                                    onAddCustomClick = { showAddTrackDialog = true }
+                                )
+                            }
+                        }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // ==========================================
-                // 3. TAB CONTENT
-                // ==========================================
-                when (selectedTab) {
-                    AmbientTab.ALL -> {
-                        AllTracksView(
-                            allTracks = allTracks,
-                            preferences = preferences,
-                            playerState = playerState,
-                            favoriteTrackIds = favoriteTrackIds,
-                            onSelectTrack = onSelectTrack,
-                            onTogglePlayPause = onTogglePlayPause,
-                            onToggleFavorite = onToggleFavoriteTrack,
-                            onAddToCollection = { track -> trackForAddToCollection = track },
-                            onDeleteCustomTrack = onDeleteCustomTrack,
-                            onAddCustomClick = { showAddTrackDialog = true }
-                        )
-                    }
-                    AmbientTab.COLLECTIONS -> {
-                        CollectionsView(
-                            collections = collections,
-                            allTracks = allTracks,
-                            preferences = preferences,
-                            playerState = playerState,
-                            favoriteTrackIds = favoriteTrackIds,
-                            onCreateCollectionClick = { showCreateCollectionDialog = true },
-                            onEditCollection = { col -> collectionToEdit = col },
-                            onDeleteCollection = onDeleteCollection,
-                            onPlayCollection = onPlayCollection,
-                            onRemoveTrackFromCollection = onRemoveTrackFromCollection,
-                            onToggleFavorite = onToggleFavoriteTrack,
-                            onSelectTrack = onSelectTrack,
-                            onTogglePlayPause = onTogglePlayPause
-                        )
-                    }
-                    AmbientTab.SOUNDSCAPES -> {
-                        SoundscapesOnlyView(
-                            builtInTracks = FocusAudioCatalog.BUILT_IN_TRACKS,
-                            preferences = preferences,
-                            playerState = playerState,
-                            favoriteTrackIds = favoriteTrackIds,
-                            onSelectTrack = onSelectTrack,
-                            onTogglePlayPause = onTogglePlayPause,
-                            onToggleFavorite = onToggleFavoriteTrack,
-                            onAddToCollection = { track -> trackForAddToCollection = track }
-                        )
-                    }
-                    AmbientTab.CUSTOM -> {
-                        CustomTracksOnlyView(
-                            customTracks = customTracks,
-                            preferences = preferences,
-                            playerState = playerState,
-                            favoriteTrackIds = favoriteTrackIds,
-                            onSelectTrack = onSelectTrack,
-                            onTogglePlayPause = onTogglePlayPause,
-                            onToggleFavorite = onToggleFavoriteTrack,
-                            onAddToCollection = { track -> trackForAddToCollection = track },
-                            onDeleteCustomTrack = onDeleteCustomTrack,
-                            onAddCustomClick = { showAddTrackDialog = true }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // ==========================================
-                // 4. PLAYBACK PREFERENCES & SYSTEM TOGGLES
-                // ==========================================
-                SettingsSectionHeader(title = "Playback Preferences")
-                SettingsCard {
-                    SettingsToggleRow(
-                        title = "Auto-Play on Focus Start",
-                        subtitle = "Automatically trigger ambient audio when starting a focus session",
-                        icon = Icons.Default.PlayArrow,
-                        checked = preferences.autoPlayMusicOnFocus,
-                        testTag = "toggle_auto_play",
-                        onCheckedChange = onToggleAutoPlay
-                    )
-                    HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
-                    SettingsToggleRow(
-                        title = "Loop Ambient Audio",
-                        subtitle = "Continuously loop track or collection during session",
-                        icon = Icons.Default.Repeat,
-                        checked = preferences.musicLoop,
-                        testTag = "toggle_audio_loop",
-                        onCheckedChange = onToggleLoop
-                    )
-                    HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
-                    SettingsToggleRow(
-                        title = "Audio Waveform Visualizer",
-                        subtitle = "Display animated sound waves on the active focus canvas",
-                        icon = Icons.Default.GraphicEq,
-                        checked = preferences.showWaveform,
-                        testTag = "toggle_show_waveform",
-                        onCheckedChange = onToggleShowWaveform
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }
+}
 
-    // Modal Dialogs
+    // Modal Dialogs & Sheets
+    // Phase 6: Quick Settings Sheet
+    if (showQuickSettings) {
+        AmbientQuickSettingsSheet(
+            preferences = preferences,
+            onDismiss = { showQuickSettings = false },
+            onToggleAutoPlay = onToggleAutoPlay,
+            onToggleLoop = onToggleLoop,
+            onToggleShowWaveform = onToggleShowWaveform
+        )
+    }
+
+    // Phase 5: Streamlined Modal Bottom Sheet for Custom Audio Import
     if (showAddTrackDialog) {
-        AddCustomTrackDialog(
+        ImportAudioBottomSheet(
             onDismiss = { showAddTrackDialog = false },
             onLaunchLocalPicker = { title ->
                 launchLocalPicker(title)
@@ -571,7 +826,18 @@ fun AmbientSoundSettingsScreen(
             onAddYouTubeTrack = { url, title ->
                 onAddCustomTrack(url, title, true)
                 showAddTrackDialog = false
-            }
+                coroutineScope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Added '$title' to Custom Audio",
+                        actionLabel = "Play Now",
+                        duration = SnackbarDuration.Short
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        onSelectTrack(url, true)
+                    }
+                }
+            },
+            isScanningFolder = isScanningFolder
         )
     }
 
@@ -622,136 +888,228 @@ fun AmbientSoundSettingsScreen(
             }
         )
     }
+
+    if (showPlaybackDetails) {
+        // Phase 2 Milestone 2.2: Scrim overlay at 40% opacity behind expanded sheet
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.40f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showPlaybackDetails = false }
+                )
+                .testTag("ambient_playback_detail_scrim")
+        )
+
+        AmbientPlaybackDetailSheet(
+            activeTrack = activeTrack,
+            activeCollection = activeCollection,
+            playerState = playerState,
+            preferences = preferences,
+            onDismiss = { showPlaybackDetails = false },
+            onTogglePlayPause = {
+                if (preferences.selectedTrackId == activeTrack.id && playerState.isPlaying) {
+                    onTogglePlayPause()
+                } else {
+                    onSelectTrack(activeTrack.id, true)
+                }
+            },
+            onVolumeChange = onVolumeChange,
+            onClearCollection = onClearActiveCollection,
+            onSelectPlaybackMode = { mode ->
+                onSetCollectionPlaybackMode(mode)
+            }
+        )
+    }
+    }
 }
 
 // =========================================================================
-// HERO AUDITION CARD COMPONENT
+// FLOATING COMPACT MINI-PLAYER BAR (Phase 2 Milestone 2.1 & 2.2)
 // =========================================================================
 
+/**
+ * Modern Compact Floating Mini-Player Bar (72dp height).
+ * Replaces the bulky 200dp static hero audition card.
+ * - Pinned at top of content area (sticky header)
+ * - 16dp rounded corners, AMOLED surface with outline border
+ * - Left: Track icon with animated waveform when playing + bold track title
+ * - Right: Volume toggle icon + master 1-tap play/pause button (48dp touch targets)
+ * - Bottom: 2.5dp subtle progress bar indicator
+ * - Gestures: Tap track title area or swipe-up expands AmbientPlaybackDetailSheet
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun HeroAuditionCard(
+private fun AmbientMiniPlayerBar(
     activeTrack: FocusTrack,
     activeCollection: TrackCollection?,
-    playerState: PlayerUiState,
-    preferences: FocusPreferences,
+    playbackUiState: AmbientPlaybackUiState,
     onTogglePlayPause: () -> Unit,
-    onVolumeChange: (Float) -> Unit,
-    onClearCollection: () -> Unit,
-    onSelectPlaybackMode: (CollectionPlaybackMode) -> Unit
+    onVolumeToggle: () -> Unit,
+    onExpandDetails: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF131318),
-        border = BorderStroke(1.dp, Color(0xFF282834)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            // Collection Tag Badge if active
-            if (activeCollection != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(activeCollection.accentColorHex).copy(alpha = 0.2f),
-                        border = BorderStroke(1.dp, Color(activeCollection.accentColorHex).copy(alpha = 0.4f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "PLAYLIST: ${activeCollection.name.uppercase()}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
-                                ),
-                                color = Color(activeCollection.accentColorHex)
-                            )
-                        }
-                    }
+    val haptics = LocalHapticFeedback.current
+    val colors = AmbientTheme.colors
+    val density = LocalDensity.current
+    val dragDistancePx = with(density) { 72.dp.toPx() }
+    val decayAnimationSpec = rememberSplineBasedDecay<Float>()
+    val snapAnimationSpec = tween<Float>(
+        durationMillis = 400,
+        easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f) // EmphasizedDecelerate
+    )
 
-                    TextButton(
-                        onClick = onClearCollection,
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text(
-                            text = "Play Solo Track",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = Color(0xFF9E9EA8)
-                        )
-                    }
+    // Phase 2 Milestone 2.2: AnchoredDraggable state with velocity-based snap
+    val anchoredDraggableState = remember {
+        AnchoredDraggableState(
+            initialValue = MiniPlayerDragAnchor.Collapsed,
+            positionalThreshold = { distance: Float -> distance * 0.4f },
+            velocityThreshold = { with(density) { 120.dp.toPx() } },
+            snapAnimationSpec = snapAnimationSpec,
+            decayAnimationSpec = decayAnimationSpec,
+            confirmValueChange = { targetValue ->
+                if (targetValue == MiniPlayerDragAnchor.Expanded) {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onExpandDetails()
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                true
             }
+        )
+    }
 
-            // Track Title & Equalizer Row
+    androidx.compose.runtime.LaunchedEffect(dragDistancePx) {
+        anchoredDraggableState.updateAnchors(
+            DraggableAnchors {
+                MiniPlayerDragAnchor.Collapsed at 0f
+                MiniPlayerDragAnchor.Expanded at -dragDistancePx
+            }
+        )
+    }
+
+    androidx.compose.runtime.LaunchedEffect(anchoredDraggableState.currentValue) {
+        if (anchoredDraggableState.currentValue == MiniPlayerDragAnchor.Expanded) {
+            anchoredDraggableState.snapTo(MiniPlayerDragAnchor.Collapsed)
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.ambientSurface,
+        border = BorderStroke(1.dp, colors.ambientOutline),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .anchoredDraggable(
+                state = anchoredDraggableState,
+                orientation = Orientation.Vertical
+            )
+            .clickable(
+                role = Role.Button,
+                onClick = onExpandDetails
+            )
+            .testTag("ambient_mini_player_bar")
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                // Track Icon Box with animated waveform
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (playbackUiState.isPlaying) {
+                                Brush.linearGradient(listOf(colors.ambientAccent, colors.ambientActiveGlow))
+                            } else {
+                                Brush.linearGradient(listOf(Color(0xFF22222C), Color(0xFF181820)))
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (playerState.isPlaying) {
-                                    Brush.linearGradient(listOf(FocusAmber, Color(0xFFFFB74D)))
-                                } else {
-                                    Brush.linearGradient(listOf(Color(0xFF202028), Color(0xFF181820)))
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (playerState.isPlaying) {
-                            AnimatedWaveformBars(isAnimating = true)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = FocusAmber,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = activeTrack.title,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp
-                            ),
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (activeTrack.isYouTube) "YouTube Audio Link" else activeTrack.artist,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = FocusAmber,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    if (playbackUiState.isPlaying) {
+                        AnimatedWaveformBars(isAnimating = true, barColor = Color.Black)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = colors.ambientAccent,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
 
-                // Master Play/Pause Audition Button
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Title and collection / subtitle indicator
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = activeTrack.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = colors.ambientOnSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (activeCollection != null) {
+                            Text(
+                                text = "Playlist: ${activeCollection.name}",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = Color(activeCollection.accentColorHex),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                text = if (activeTrack.isYouTube) "YouTube Audio" else activeTrack.artist,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                                color = colors.ambientAccent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Volume Indicator Toggle (48dp touch target)
+                IconButton(
+                    onClick = onVolumeToggle,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("mini_player_volume_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (playbackUiState.musicVolume == 0f) {
+                            Icons.AutoMirrored.Filled.VolumeMute
+                        } else {
+                            Icons.AutoMirrored.Filled.VolumeDown
+                        },
+                        contentDescription = if (playbackUiState.musicVolume == 0f) "Unmute" else "Mute",
+                        tint = if (playbackUiState.musicVolume == 0f) colors.ambientOnSurfaceMuted else colors.ambientAccent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                // Master Play/Pause Button (48dp touch target with 42dp surface)
                 Surface(
                     shape = CircleShape,
-                    color = FocusAmber,
+                    color = colors.ambientAccent,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(42.dp)
                         .clickable(
                             role = Role.Button,
                             onClick = onTogglePlayPause
@@ -760,123 +1118,34 @@ private fun HeroAuditionCard(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (playerState.isPlaying) "Pause" else "Play",
+                            imageVector = if (playbackUiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (playbackUiState.isPlaying) "Pause" else "Play",
                             tint = Color.Black,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider(color = Color(0xFF22222E), thickness = 0.75.dp)
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Playback Mode Quick Select Chips (Single / Loop 1 / Loop All)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            // 2.5dp horizontal progress line embedded at bottom edge of card
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.5.dp)
+                    .background(colors.ambientOutline.copy(alpha = 0.5f))
             ) {
-                Text(
-                    text = "Mode:",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color(0xFF9E9EA8)
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val currentMode = preferences.collectionPlaybackMode
-                    CollectionPlaybackMode.values().forEach { mode ->
-                        val isModeSelected = currentMode == mode
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isModeSelected) FocusAmber.copy(alpha = 0.2f) else Color(0xFF1E1E26),
-                            border = BorderStroke(
-                                1.dp,
-                                if (isModeSelected) FocusAmber else Color(0xFF2C2C38)
-                            ),
-                            modifier = Modifier.clickable { onSelectPlaybackMode(mode) }
-                        ) {
-                            Text(
-                                text = mode.displayName,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (isModeSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 10.sp
-                                ),
-                                color = if (isModeSelected) FocusAmber else Color(0xFFBBBBC6),
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                if (playbackUiState.isPlaying) {
+                    // Subtle glowing active indicator line
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.55f)
+                            .height(2.5.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(colors.ambientAccentDim, colors.ambientAccent, colors.ambientActiveGlow)
+                                )
                             )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Volume Slider Section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Master Soundscape Volume",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                    color = Color(0xFFD4D4D8)
-                )
-                Text(
-                    text = "${(preferences.musicVolume * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = FocusAmber
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        if (preferences.musicVolume > 0f) onVolumeChange(0f) else onVolumeChange(0.7f)
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = if (preferences.musicVolume == 0f) Icons.AutoMirrored.Filled.VolumeMute else Icons.AutoMirrored.Filled.VolumeDown,
-                        contentDescription = "Mute",
-                        tint = if (preferences.musicVolume == 0f) FocusAmber else Color(0xFF8E8E96),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                Slider(
-                    value = preferences.musicVolume,
-                    onValueChange = onVolumeChange,
-                    valueRange = 0f..1f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = FocusAmber,
-                        activeTrackColor = FocusAmber,
-                        inactiveTrackColor = Color(0xFF2C2C36)
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("audio_volume_slider")
-                )
-
-                IconButton(
-                    onClick = { onVolumeChange(1f) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Max Volume",
-                        tint = Color(0xFF8E8E96),
-                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -899,59 +1168,185 @@ private fun AllTracksView(
     onToggleFavorite: (String) -> Unit,
     onAddToCollection: (FocusTrack) -> Unit,
     onDeleteCustomTrack: (String) -> Unit,
-    onAddCustomClick: () -> Unit
+    onAddCustomClick: () -> Unit,
+    isLoading: Boolean = false
 ) {
     Column {
         SettingsSectionHeader(title = "All Ambient Tracks (${allTracks.size})")
         SettingsCard {
-            allTracks.forEachIndexed { index, track ->
-                TrackRowItem(
-                    track = track,
-                    isSelected = preferences.selectedTrackId == track.id,
-                    isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
-                    isFavorite = favoriteTrackIds.contains(track.id),
-                    onSelect = { onSelectTrack(track.id, false) },
-                    onPreviewToggle = {
-                        if (preferences.selectedTrackId == track.id) {
-                            onTogglePlayPause()
-                        } else {
-                            onSelectTrack(track.id, true)
-                        }
-                    },
-                    onToggleFavorite = { onToggleFavorite(track.id) },
-                    onAddToCollection = { onAddToCollection(track) },
-                    onDelete = if (!track.isBuiltIn) { { onDeleteCustomTrack(track.id) } } else null
-                )
+            // Phase 7 Milestone 7.1: Show skeleton rows while loading
+            if (isLoading) {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(5) {
+                        TrackRowSkeleton()
+                    }
+                }
+            } else {
+                // Phase 7 Milestone 7.4: Convert to LazyColumn with keys for performance
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(
+                        items = allTracks,
+                        key = { it.id },
+                        contentType = { "track" }
+                    ) { track ->
+                    TrackRowItem(
+                        track = track,
+                        isSelected = preferences.selectedTrackId == track.id,
+                        isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
+                        isFavorite = favoriteTrackIds.contains(track.id),
+                        onSelect = { onSelectTrack(track.id, false) },
+                        onPreviewToggle = {
+                            if (preferences.selectedTrackId == track.id) {
+                                onTogglePlayPause()
+                            } else {
+                                onSelectTrack(track.id, true)
+                            }
+                        },
+                        onToggleFavorite = { onToggleFavorite(track.id) },
+                        onAddToCollection = { onAddToCollection(track) },
+                        onDelete = if (!track.isBuiltIn) { { onDeleteCustomTrack(track.id) } } else null
+                    )
+                }
 
-                if (index < allTracks.size - 1) {
+                item(contentType = "divider") {
                     HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
                 }
+
+                item(contentType = "action") {
+                    // Add Custom Track Action
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onAddCustomClick)
+                            .padding(16.dp)
+                            .testTag("add_custom_track_row"),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Track",
+                            tint = FocusAmber,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Add Custom Audio / YouTube",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = FocusAmber
+                        )
+                    }
+                }
+                }
             }
+        }
+    }
+}
 
-            HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+// =========================================================================
+// FAVORITES ONLY VIEW (Phase 3 Milestone 3.1 & 3.2)
+// =========================================================================
 
-            // Add Custom Track Action
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onAddCustomClick)
-                    .padding(16.dp)
-                    .testTag("add_custom_track_row"),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add Track",
-                    tint = FocusAmber,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Add Custom Audio / YouTube",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = FocusAmber
-                )
+@Composable
+private fun FavoritesOnlyView(
+    allTracks: List<FocusTrack>,
+    preferences: FocusPreferences,
+    playerState: PlayerUiState,
+    favoriteTrackIds: Set<String>,
+    onSelectTrack: (String, Boolean) -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onAddToCollection: (FocusTrack) -> Unit,
+    onDeleteCustomTrack: (String) -> Unit,
+    isLoading: Boolean = false
+) {
+    val favoriteTracks = remember(allTracks, favoriteTrackIds) {
+        allTracks.filter { favoriteTrackIds.contains(it.id) }
+    }
+
+    Column {
+        SettingsSectionHeader(title = "Favorite Tracks (${favoriteTracks.size})")
+        SettingsCard {
+            // Phase 7 Milestone 7.1: Show skeleton rows while loading
+            if (isLoading) {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(5) {
+                        TrackRowSkeleton()
+                    }
+                }
+            } else if (favoriteTracks.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE11D48).copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = Color(0xFFE11D48),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "No favorite tracks yet",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Tap the menu or swipe right on any track to add it to your favorites for instant 1-tap playback.",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                        color = Color(0xFF9E9EA8),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            } else {
+                // Phase 7 Milestone 7.4: Convert to LazyColumn with keys for performance
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(
+                        items = favoriteTracks,
+                        key = { it.id },
+                        contentType = { "track" }
+                    ) { track ->
+                        TrackRowItem(
+                            track = track,
+                            isSelected = preferences.selectedTrackId == track.id,
+                            isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
+                            isFavorite = true,
+                            onSelect = { onSelectTrack(track.id, false) },
+                            onPreviewToggle = {
+                                if (preferences.selectedTrackId == track.id) {
+                                    onTogglePlayPause()
+                                } else {
+                                    onSelectTrack(track.id, true)
+                                }
+                            },
+                            onToggleFavorite = { onToggleFavorite(track.id) },
+                            onAddToCollection = { onAddToCollection(track) },
+                            onDelete = if (!track.isBuiltIn) { { onDeleteCustomTrack(track.id) } } else null
+                        )
+                    }
+                }
             }
         }
     }
@@ -977,6 +1372,8 @@ private fun CollectionsView(
     onSelectTrack: (String, Boolean) -> Unit,
     onTogglePlayPause: () -> Unit
 ) {
+    val colors = AmbientTheme.colors
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -987,9 +1384,9 @@ private fun CollectionsView(
             OutlinedButton(
                 onClick = onCreateCollectionClick,
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = FocusAmber
+                    contentColor = colors.ambientAccent
                 ),
-                border = BorderStroke(1.dp, FocusAmber.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, colors.ambientActiveGlow),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.height(34.dp).testTag("create_collection_button")
             ) {
@@ -1009,7 +1406,9 @@ private fun CollectionsView(
         Spacer(modifier = Modifier.height(10.dp))
 
         // 1. SMART "FAMOUS / FAVORITES" COLLECTION CARD
-        val favoriteTracks = allTracks.filter { favoriteTrackIds.contains(it.id) }
+        val favoriteTracks = remember(allTracks, favoriteTrackIds) {
+            allTracks.filter { favoriteTrackIds.contains(it.id) }
+        }
         SmartFavoritesCard(
             favoriteTracks = favoriteTracks,
             isPlayingCollection = preferences.activeCollectionId == "favorites_smart_id",
@@ -1030,45 +1429,64 @@ private fun CollectionsView(
         // 2. USER CUSTOM COLLECTIONS
         if (collections.isEmpty()) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF131317),
-                border = BorderStroke(1.dp, Color(0xFF22222A)),
+                shape = RoundedCornerShape(20.dp),
+                color = colors.ambientSurface,
+                border = BorderStroke(1.dp, colors.ambientOutline),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = Color(0xFF6E6E78),
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(colors.ambientAccentDim),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            tint = colors.ambientAccent,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "No custom collections yet",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = Color(0xFFD4D4D8)
+                        text = "Organize Your Soundscapes",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = colors.ambientOnSurface
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Create collections to organize your famous tracks and set single or loop playback rules.",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = Color(0xFF888892),
+                        text = "Group your favorite sounds into collections for quick access, custom playlist orders, and seamless loop playback rules.",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                        color = colors.ambientOnSurfaceMuted,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
                     Button(
                         onClick = onCreateCollectionClick,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = FocusAmber,
+                            containerColor = colors.ambientAccent,
                             contentColor = Color.Black
                         ),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(42.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "+ Create First Collection",
+                            text = "Create First Collection",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }
@@ -1594,32 +2012,49 @@ private fun SoundscapesOnlyView(
     onSelectTrack: (String, Boolean) -> Unit,
     onTogglePlayPause: () -> Unit,
     onToggleFavorite: (String) -> Unit,
-    onAddToCollection: (FocusTrack) -> Unit
+    onAddToCollection: (FocusTrack) -> Unit,
+    isLoading: Boolean = false
 ) {
     Column {
         SettingsSectionHeader(title = "Built-in Soundscapes (${builtInTracks.size})")
         SettingsCard {
-            builtInTracks.forEachIndexed { index, track ->
-                TrackRowItem(
-                    track = track,
-                    isSelected = preferences.selectedTrackId == track.id,
-                    isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
-                    isFavorite = favoriteTrackIds.contains(track.id),
-                    onSelect = { onSelectTrack(track.id, false) },
-                    onPreviewToggle = {
-                        if (preferences.selectedTrackId == track.id) {
-                            onTogglePlayPause()
-                        } else {
-                            onSelectTrack(track.id, true)
-                        }
-                    },
-                    onToggleFavorite = { onToggleFavorite(track.id) },
-                    onAddToCollection = { onAddToCollection(track) },
-                    onDelete = null
-                )
-
-                if (index < builtInTracks.size - 1) {
-                    HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+            // Phase 7 Milestone 7.1: Show skeleton rows while loading
+            if (isLoading) {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(5) {
+                        TrackRowSkeleton()
+                    }
+                }
+            } else {
+                // Phase 7 Milestone 7.4: Convert to LazyColumn with keys for performance
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(
+                        items = builtInTracks,
+                        key = { it.id },
+                        contentType = { "track" }
+                    ) { track ->
+                    TrackRowItem(
+                        track = track,
+                        isSelected = preferences.selectedTrackId == track.id,
+                        isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
+                        isFavorite = favoriteTrackIds.contains(track.id),
+                        onSelect = { onSelectTrack(track.id, false) },
+                        onPreviewToggle = {
+                            if (preferences.selectedTrackId == track.id) {
+                                onTogglePlayPause()
+                            } else {
+                                onSelectTrack(track.id, true)
+                            }
+                        },
+                        onToggleFavorite = { onToggleFavorite(track.id) },
+                        onAddToCollection = { onAddToCollection(track) },
+                        onDelete = null
+                    )
+                }
                 }
             }
         }
@@ -1641,60 +2076,110 @@ private fun CustomTracksOnlyView(
     onToggleFavorite: (String) -> Unit,
     onAddToCollection: (FocusTrack) -> Unit,
     onDeleteCustomTrack: (String) -> Unit,
-    onAddCustomClick: () -> Unit
+    onAddCustomClick: () -> Unit,
+    isLoading: Boolean = false
 ) {
     Column {
         SettingsSectionHeader(title = "Custom Audio & Streaming Links (${customTracks.size})")
         SettingsCard {
-            if (customTracks.isEmpty()) {
+            // Phase 7 Milestone 7.1: Show skeleton rows while loading
+            if (isLoading) {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(5) {
+                        TrackRowSkeleton()
+                    }
+                }
+            } else if (customTracks.isEmpty()) {
+                // Phase 7 Milestone 7.3: Empty state with illustration and CTA
+                val colors = AmbientTheme.colors
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = Color(0xFF6E6E78),
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(colors.ambientAccentDim),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = colors.ambientAccent,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "No custom audio files added",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = Color(0xFFD4D4D8)
+                        text = "Add Your Own Sounds",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = colors.ambientOnSurface
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Import local audio files via SAF or add streaming YouTube links.",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = Color(0xFF888892),
+                        text = "Import local audio files or add streaming YouTube links to personalize your focus experience.",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                        color = colors.ambientOnSurfaceMuted,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Button(
+                        onClick = onAddCustomClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.ambientAccent,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(42.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Import Audio",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
                 }
             } else {
-                customTracks.forEachIndexed { index, track ->
-                    TrackRowItem(
-                        track = track,
-                        isSelected = preferences.selectedTrackId == track.id,
-                        isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
-                        isFavorite = favoriteTrackIds.contains(track.id),
-                        onSelect = { onSelectTrack(track.id, false) },
-                        onPreviewToggle = {
-                            if (preferences.selectedTrackId == track.id) {
-                                onTogglePlayPause()
-                            } else {
-                                onSelectTrack(track.id, true)
-                            }
-                        },
-                        onToggleFavorite = { onToggleFavorite(track.id) },
-                        onAddToCollection = { onAddToCollection(track) },
-                        onDelete = { onDeleteCustomTrack(track.id) }
-                    )
-
-                    if (index < customTracks.size - 1) {
-                        HorizontalDivider(color = Color(0xFF1F1F24), thickness = 0.75.dp)
+                // Phase 7 Milestone 7.4: Convert to LazyColumn with keys for performance
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(
+                        items = customTracks,
+                        key = { it.id },
+                        contentType = { "track" }
+                    ) { track ->
+                        TrackRowItem(
+                            track = track,
+                            isSelected = preferences.selectedTrackId == track.id,
+                            isPlaying = preferences.selectedTrackId == track.id && playerState.isPlaying,
+                            isFavorite = favoriteTrackIds.contains(track.id),
+                            onSelect = { onSelectTrack(track.id, false) },
+                            onPreviewToggle = {
+                                if (preferences.selectedTrackId == track.id) {
+                                    onTogglePlayPause()
+                                } else {
+                                    onSelectTrack(track.id, true)
+                                }
+                            },
+                            onToggleFavorite = { onToggleFavorite(track.id) },
+                            onAddToCollection = { onAddToCollection(track) },
+                            onDelete = { onDeleteCustomTrack(track.id) }
+                        )
                     }
                 }
             }
@@ -1728,9 +2213,19 @@ private fun CustomTracksOnlyView(
 }
 
 // =========================================================================
-// REUSABLE TRACK ROW ITEM COMPONENT
+// REUSABLE TRACK ROW ITEM COMPONENT (Phase 1 Redesign)
 // =========================================================================
 
+/**
+ * Redesigned track row with:
+ * - 68dp height, full-row 1-tap play/pause
+ * - Animated amber glow border + tinted background for active state
+ * - Single 3-dot overflow menu (replaces inline Heart/Plus/Delete icons)
+ * - Swipe-right to toggle favorite, swipe-left to delete (custom only)
+ * - Long-press to open context menu with haptic feedback
+ * - Integrated animated waveform for currently playing track
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun TrackRowItem(
     track: FocusTrack,
@@ -1743,142 +2238,363 @@ private fun TrackRowItem(
     onAddToCollection: () -> Unit,
     onDelete: (() -> Unit)?
 ) {
-    Row(
+    val colors = AmbientTheme.colors
+
+    // Animated colors for active/inactive state transitions (300ms EmphasizedDecelerate)
+    val rowBorderColor by animateColorAsState(
+        targetValue = if (isSelected) colors.ambientActiveGlow else Color.Transparent,
+        animationSpec = tween(
+            durationMillis = 300,
+            easing = FastOutSlowInEasing
+        ),
+        label = "rowBorder"
+    )
+    val rowBackgroundColor by animateColorAsState(
+        targetValue = if (isSelected) colors.ambientActiveBg else Color.Transparent,
+        animationSpec = tween(
+            durationMillis = 300,
+            easing = FastOutSlowInEasing
+        ),
+        label = "rowBg"
+    )
+
+    // Overflow menu state
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+
+    // Phase 1 Milestone 1.4: Material 3 SwipeToDismiss gesture with favorite/delete & rubber-band
+    val dismissState = rememberDismissState(
+        confirmValueChange = { dismissValue ->
+            when (dismissValue) {
+                DismissValue.DismissedToEnd -> {
+                    // Right swipe: toggle favorite
+                    AmbientAnalytics.logGestureUsed("swipe_favorite", track.id)
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onToggleFavorite()
+                    false // Return false so item snaps back and stays in list
+                }
+                DismissValue.DismissedToStart -> {
+                    // Left swipe: delete custom track, or rubber-band for built-in
+                    if (onDelete != null) {
+                        AmbientAnalytics.logGestureUsed("swipe_delete", track.id)
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDelete()
+                        true // Dismiss custom track
+                    } else {
+                        AmbientAnalytics.logGestureUsed("swipe_delete_rejected_builtin", track.id)
+                        // Built-in track resists delete swipe with rubber-band effect!
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        false // Snap back without deleting!
+                    }
+                }
+                DismissValue.Default -> false
+            }
+        }
+    )
+
+    SwipeToDismiss(
+        state = dismissState,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                role = Role.RadioButton,
-                onClick = onSelect
-            )
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .height(68.dp)
             .testTag("track_row_${track.id}"),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Play/Pause icon button for instant preview
-        IconButton(
-            onClick = {
-                android.util.Log.d("FocusClockApp", "[DIAGNOSTIC] Custom Audio Play clicked: trackId=${track.id}, title='${track.title}', isYouTube=${track.isYouTube}, isSelected=$isSelected")
-                onPreviewToggle()
-            },
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(if (isSelected) FocusAmber else Color(0xFF222228))
-                .testTag("preview_btn_${track.id}")
-        ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = if (isSelected) Color.Black else Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        fontSize = 14.5.sp
-                    ),
-                    color = if (isSelected) Color.White else Color(0xFFD4D4D8),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (track.isYouTube) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFFF0000).copy(alpha = 0.2f)
+        directions = setOf(DismissDirection.StartToEnd, DismissDirection.EndToStart),
+        background = {
+            val direction = dismissState.dismissDirection ?: return@SwipeToDismiss
+            when (direction) {
+                DismissDirection.StartToEnd -> {
+                    // Right swipe: Favorite star reveal
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(colors.ambientAccentDim)
+                            .padding(horizontal = 20.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Text(
-                            text = "YouTube",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp
-                            ),
-                            color = Color(0xFFFF4444),
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                                tint = colors.ambientAccent,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = if (isFavorite) "Unfavorite" else "Favorite",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = colors.ambientAccent
+                            )
+                        }
+                    }
+                }
+                DismissDirection.EndToStart -> {
+                    // Left swipe: Delete (custom) or Rubber-band non-deletable (built-in)
+                    if (onDelete != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(colors.ambientErrorContainer)
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Remove",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = colors.ambientError
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Remove Track",
+                                    tint = colors.ambientError,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Built-in track rubber-band visual feedback
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(colors.ambientSurfaceVariant)
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Built-in Sound (Cannot Delete)",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = colors.ambientOnSurfaceMuted
+                                )
+                            }
+                        }
                     }
                 }
             }
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
-                color = if (isSelected) FocusAmber else Color(0xFF888892),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Action Icons: Favorite, Add to Collection, Delete
-        IconButton(
-            onClick = onToggleFavorite,
-            modifier = Modifier.size(32.dp).testTag("fav_btn_${track.id}")
-        ) {
-            Icon(
-                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = if (isFavorite) "Favorited" else "Favorite",
-                tint = if (isFavorite) Color(0xFFE11D48) else Color(0xFF71717A),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        IconButton(
-            onClick = onAddToCollection,
-            modifier = Modifier.size(32.dp).testTag("add_to_col_btn_${track.id}")
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add to collection",
-                tint = Color(0xFF9E9EA8),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        if (onDelete != null) {
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(32.dp).testTag("delete_track_${track.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete Track",
-                    tint = Color(0xFF71717A),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-
-        if (isSelected) {
+        },
+        dismissContent = {
             Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = FocusAmber.copy(alpha = 0.15f)
+                shape = RoundedCornerShape(14.dp),
+                color = rowBackgroundColor,
+                border = if (isSelected) BorderStroke(1.dp, rowBorderColor) else null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .semantics {
+                        // Phase 8 Milestone 8.1: TalkBack accessibility state description
+                        stateDescription = if (isSelected && isPlaying) {
+                            "Playing, Active ambient track"
+                        } else if (isSelected) {
+                            "Paused, Active ambient track"
+                        } else {
+                            "Inactive ambient track"
+                        }
+                    }
             ) {
-                Text(
-                    text = "ACTIVE",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 9.sp
-                    ),
-                    color = FocusAmber,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .combinedClickable(
+                        onClick = onPreviewToggle,
+                        onLongClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showOverflowMenu = true
+                        },
+                        role = Role.Button
+                    )
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: Track icon / Animated waveform for active playing track
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected && isPlaying) {
+                                Brush.linearGradient(listOf(colors.ambientAccent, colors.ambientActiveGlow))
+                            } else if (isSelected) {
+                                Brush.linearGradient(listOf(colors.ambientAccentDim, colors.ambientAccent.copy(alpha = 0.08f)))
+                            } else {
+                                Brush.linearGradient(listOf(Color(0xFF1E1E26), Color(0xFF16161C)))
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected && isPlaying) {
+                        AnimatedWaveformBars(isAnimating = true)
+                    } else {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.Pause else Icons.Default.MusicNote,
+                            contentDescription = if (isSelected) "Pause" else "Track",
+                            tint = if (isSelected) Color.Black else colors.ambientAccent.copy(alpha = 0.7f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                // Center: Track title + artist subtitle
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.5.sp
+                            ),
+                            color = if (isSelected) colors.ambientOnSurface else colors.ambientOnSurface.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (track.isYouTube) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFFF0000).copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "YT",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp
+                                    ),
+                                    color = Color(0xFFFF4444),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        if (isFavorite) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "Favorited",
+                                tint = colors.ambientAccent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = track.artist,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                        color = if (isSelected) colors.ambientAccent else colors.ambientOnSurfaceMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Right: Single overflow menu (3-dot) — 48dp touch target
+                Box {
+                    IconButton(
+                        onClick = { showOverflowMenu = true },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("overflow_btn_${track.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Track options",
+                            tint = if (isSelected) colors.ambientOnSurface else colors.ambientOnSurfaceMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Context menu dropdown
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            },
+                            onClick = {
+                                onToggleFavorite()
+                                showOverflowMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isFavorite) Color(0xFFE11D48) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Add to Collection",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            },
+                            onClick = {
+                                onAddToCollection()
+                                showOverflowMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                        if (onDelete != null) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Remove Track",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color(0xFFE11D48)
+                                    )
+                                },
+                                onClick = {
+                                    onDelete()
+                                    showOverflowMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = Color(0xFFE11D48)
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
-    }
+    )
 }
 
 // =========================================================================
-// ANIMATED WAVEFORM BARS
+// ANIMATED WAVEFORM BARS (Phase 1 Visual Polish)
 // =========================================================================
 
 @Composable
-private fun AnimatedWaveformBars(isAnimating: Boolean) {
+internal fun AnimatedWaveformBars(
+    isAnimating: Boolean,
+    modifier: Modifier = Modifier,
+    barColor: Color = Color.Black
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "wave")
     val bar1 by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -1909,30 +2625,121 @@ private fun AnimatedWaveformBars(isAnimating: Boolean) {
     )
 
     Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.height(18.dp)
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height((18 * if (isAnimating) bar1 else 0.4f).dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Black)
+                .height((16 * if (isAnimating) bar1 else 0.4f).dp)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(barColor)
         )
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height((18 * if (isAnimating) bar2 else 0.8f).dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Black)
+                .height((16 * if (isAnimating) bar2 else 0.8f).dp)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(barColor)
         )
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height((18 * if (isAnimating) bar3 else 0.5f).dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.Black)
+                .height((16 * if (isAnimating) bar3 else 0.5f).dp)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(barColor)
         )
+    }
+}
+
+// =========================================================================
+// PHASE 7.1: SKELETON LOADING ROW
+// =========================================================================
+
+/**
+ * Phase 7 Milestone 7.1: Skeleton loading row for track lists.
+ * Displays shimmer animation with gradient sweep during content loading.
+ * 68dp height matching actual track rows.
+ */
+@Composable
+private fun TrackRowSkeleton(
+    modifier: Modifier = Modifier
+) {
+    val colors = AmbientTheme.colors
+    val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
+    val shimmerOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        ),
+        label = "shimmer"
+    )
+
+    val shimmerBrush = Brush.horizontalGradient(
+        colors = listOf(
+            colors.ambientSurfaceVariant,
+            colors.ambientSurface,
+            colors.ambientSurfaceVariant
+        ),
+        startX = shimmerOffset,
+        endX = shimmerOffset + 400f
+    )
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = colors.ambientSurfaceVariant,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(68.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Skeleton icon
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(shimmerBrush)
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // Skeleton title and subtitle
+            Column(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.6f)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(shimmerBrush)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.4f)
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(shimmerBrush)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Skeleton overflow icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(shimmerBrush)
+            )
+        }
     }
 }
 
@@ -2322,211 +3129,5 @@ private fun AddToCollectionBottomSheet(
     )
 }
 
-// =========================================================================
-// ADD CUSTOM TRACK DIALOG
-// =========================================================================
 
-@Composable
-private fun AddCustomTrackDialog(
-    onDismiss: () -> Unit,
-    onLaunchLocalPicker: (String) -> Unit,
-    onLaunchFolderPicker: () -> Unit,
-    onAddYouTubeTrack: (String, String) -> Unit
-) {
-    var selectedMode by remember { mutableStateOf(0) } // 0: Bulk Files, 1: Full Folder, 2: YouTube
-    var youtubeUrl by remember { mutableStateOf("") }
-    var trackTitle by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF141417),
-        shape = RoundedCornerShape(20.dp),
-        title = {
-            Text(
-                text = "Add Custom Audio",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-        },
-        text = {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedMode == 0,
-                        onClick = { selectedMode = 0 },
-                        label = { Text("Bulk Files", fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = FocusAmber,
-                            selectedLabelColor = Color.Black
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = selectedMode == 1,
-                        onClick = { selectedMode = 1 },
-                        label = { Text("Full Folder", fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = FocusAmber,
-                            selectedLabelColor = Color.Black
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = selectedMode == 2,
-                        onClick = { selectedMode = 2 },
-                        label = { Text("YouTube", fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = FocusAmber,
-                            selectedLabelColor = Color.Black
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                when (selectedMode) {
-                    2 -> {
-                        OutlinedTextField(
-                            value = trackTitle,
-                            onValueChange = { trackTitle = it },
-                            label = { Text("Track Title (Optional)") },
-                            placeholder = { Text("e.g. Deep Focus Ambient", color = Color.Gray) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = FocusAmber,
-                                unfocusedBorderColor = DarkOutline
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = youtubeUrl,
-                            onValueChange = { youtubeUrl = it },
-                            label = { Text("YouTube Video or Playlist URL") },
-                            placeholder = { Text("https://youtube.com/watch?v=... or /playlist?list=...", color = Color.Gray) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = FocusAmber,
-                                unfocusedBorderColor = DarkOutline
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Supports single videos and full playlists with background audio streaming.",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                            color = Color.Gray
-                        )
-                    }
-                    1 -> {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF1E1E24),
-                            border = BorderStroke(1.dp, Color(0xFF33333E)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    tint = FocusAmber,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Import Whole Folder",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = Color.White
-                                    )
-                                    Text(
-                                        text = "Select any directory on your device or SD card. All audio tracks found inside (and sub-folders) will be automatically scanned and imported.",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                        color = Color(0xFFA0A0AA)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    else -> {
-                        OutlinedTextField(
-                            value = trackTitle,
-                            onValueChange = { trackTitle = it },
-                            label = { Text("Custom Title Prefix (Optional)") },
-                            placeholder = { Text("Leave blank to use audio file names", color = Color.Gray) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = FocusAmber,
-                                unfocusedBorderColor = DarkOutline
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Select one or multiple audio tracks directly from device storage (MP3, WAV, M4A, FLAC, OGG, AAC, OPUS).",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = Color(0xFFB0B0B8)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    when (selectedMode) {
-                        2 -> {
-                            if (youtubeUrl.isNotBlank()) {
-                                val title = trackTitle.ifBlank { "YouTube Stream" }
-                                onAddYouTubeTrack(youtubeUrl, title)
-                            }
-                        }
-                        1 -> {
-                            onLaunchFolderPicker()
-                        }
-                        else -> {
-                            onLaunchLocalPicker(trackTitle)
-                        }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = FocusAmber,
-                    contentColor = Color.Black
-                ),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(
-                    text = when (selectedMode) {
-                        2 -> "Add YouTube Track"
-                        1 -> "Select Folder"
-                        else -> "Choose Audio File(s)"
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Gray)
-            }
-        }
-    )
-}
 

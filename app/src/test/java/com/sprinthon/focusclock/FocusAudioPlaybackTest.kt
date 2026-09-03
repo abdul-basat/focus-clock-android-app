@@ -123,4 +123,34 @@ class FocusAudioPlaybackTest {
         assertFalse(repeatOffState.isLooping)
         assertFalse(repeatOffState.isRepeatOne)
     }
+
+    @Test
+    fun testAmbientFilterTypeEnum() {
+        val filters = com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.values()
+        assertEquals(5, filters.size)
+        assertEquals("All", com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.ALL.title)
+        assertEquals("Favorites", com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.FAVORITES.title)
+        assertEquals("Soundscapes", com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.SOUNDSCAPES.title)
+        assertEquals("Collections", com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.COLLECTIONS.title)
+        assertEquals("Custom", com.sprinthon.focusclock.ui.screens.settings.AmbientFilterType.CUSTOM.title)
+    }
+
+    @Test
+    fun testAmbientPlaybackUiStateNormalization() {
+        val state = com.sprinthon.focusclock.ui.screens.settings.AmbientPlaybackUiState(
+            isPlaying = true,
+            selectedTrackId = "gentle_rain",
+            musicVolume = 0.8f,
+            activeCollectionId = "custom_col_1",
+            collectionPlaybackMode = com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION
+        )
+        assertTrue(state.isPlaying)
+        assertEquals("gentle_rain", state.selectedTrackId)
+        assertEquals(0.8f, state.musicVolume, 0.01f)
+        assertEquals("custom_col_1", state.activeCollectionId)
+        assertEquals(
+            com.sprinthon.focusclock.domain.model.CollectionPlaybackMode.LOOP_COLLECTION,
+            state.collectionPlaybackMode
+        )
+    }
 }
